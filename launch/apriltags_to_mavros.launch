@@ -1,0 +1,48 @@
+<launch>
+    <!-- Set this to your camera's name -->
+    <arg name="cam_name" value="camera" />
+
+
+    <!-- This node description you can take from usb_cam-test.launch -->
+    <node name="$(arg cam_name)" pkg="usb_cam" type="usb_cam_node" output="screen" >
+    <param name="video_device" value="/dev/video0" />
+    <param name="image_width" value="640" />
+    <param name="image_height" value="480" />
+    <param name="pixel_format" value="yuyv" />
+    <param name="camera_frame_id" value="$(arg cam_name)_frame" />
+    <param name="camera_name" value="$(arg cam_name)" />
+    <param name="camera_info_url" value="file:///home/ubuntu/$(arg cam_name).yaml" />
+
+    <param name="io_method" value="mmap"/>
+    </node>
+
+
+    <!-- This node provides image rectification -->
+    <node name="image_proc" pkg="image_proc" type="image_proc" ns="$(arg cam_name)"/>
+
+
+    <!-- This node will launch apriltag_ros -->
+    <arg name="launch_prefix" default="" /> <!-- set to value="gdbserver localhost:10000" for remote debugging -->
+    <arg name="node_namespace" default="apriltag_ros_continuous_node" />
+    <arg name="camera_name" default="/$(arg cam_name)" />
+    <arg name="camera_frame" default="camera_frame" />
+    <arg name="image_topic" default="image_rect" />
+
+    <!-- Set parameters -->
+    <rosparam command="load" file="$(find apriltag_ros)/config/settings.yaml" ns="$(arg node_namespace)" />
+    <rosparam command="load" file="$(find apriltag_ros)/config/A3_12tags.yaml" ns="$(arg node_namespace)" />
+
+    <node pkg="apriltag_ros" type="apriltag_ros_continuous_node" name="$(arg node_namespace)" clear_params="true" output="screen" launch-prefix="$(arg launch_prefix)" >
+    <!-- Remap topics from those used in code to those on the ROS network -->
+    <remap from="image_rect" to="$(arg camera_name)/$(arg image_topic)" />
+    <remap from="camera_info" to="$(arg camera_name)/camera_info" />
+
+    <param name="camera_frame" type="str" value="$(arg camera_frame)" />
+    <param name="publish_tag_detections_image" type="bool" value="true" />      <!-- default: false -->
+    </node>
+
+
+    <!-- This node will launch frame conversion from vision pose (tf) to mavros pose -->
+    <node pkg="vision_to_mavros" type="vision_to_mavros_node" 
+        name="apriltags_to_mavros" output="screen" />
+</launch>
