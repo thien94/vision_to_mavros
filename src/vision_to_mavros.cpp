@@ -44,8 +44,8 @@ int main(int argc, char** argv){
         msg_camera_pose.pose.position.x = camera_position.getX();
         msg_camera_pose.pose.position.y = camera_position.getY();
         msg_camera_pose.pose.position.z = camera_position.getZ();
-        msg_camera_pose.pose.orientation.x = camera_quaternion.getY();
-        msg_camera_pose.pose.orientation.y = camera_quaternion.getX();
+        msg_camera_pose.pose.orientation.x = camera_quaternion.getX();
+        msg_camera_pose.pose.orientation.y = camera_quaternion.getY();
         msg_camera_pose.pose.orientation.z = camera_quaternion.getZ();
         msg_camera_pose.pose.orientation.w = camera_quaternion.getW();
 
