@@ -19,7 +19,7 @@ int main(int argc, char** argv){
   tf::TransformListener tf_listener;
 
   // Wait for the first transform to become available. 
-  tf_listener.waitForTransform("/A3_paper", "/camera_frame", ros::Time::now(), ros::Duration(3.0));
+  tf_listener.waitForTransform("/A3_bundle", "/camera_frame", ros::Time::now(), ros::Duration(3.0));
 
   ros::Time last_tf_time = ros::Time::now();
 
@@ -32,7 +32,7 @@ int main(int argc, char** argv){
 
       // lookupTransform(frame_2, frame_1, at_this_time, this_transform)
       //    will give the transfrom from frame_1 to frame_2
-      tf_listener.lookupTransform("/A3_paper", "/camera_frame", now, transform);
+      tf_listener.lookupTransform("/A3_bundle", "/camera_frame", now, transform);
 
       // Only publish pose when we have new transform data.
       if (last_tf_time < transform.stamp_)
