@@ -15,7 +15,13 @@ catkin_make
 ```
 
 ## Example usage:
-With apriltags:
+* With [Intel® RealSense™ Tracking Camera T265](https://www.intelrealsense.com/tracking-camera-t265/)
+```
+roslaunch vision_to_mavros t265_to_mavros.launch
+```
+
+
+* With apriltags:
 ```
 roslaunch vision_to_mavros apriltags_to_mavros.launch
 ```
