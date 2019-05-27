@@ -1,0 +1,8 @@
+<launch>
+
+    <!-- This node will launch frame conversion from vision pose (tf) to mavros pose -->
+    <node pkg="vision_to_mavros" type="vision_to_mavros_node" name="apriltags_to_mavros" output="screen" >
+        <remap from="vision_pose" to="/mavros/vision_pose/pose" />
+    </node>
+
+</launch>

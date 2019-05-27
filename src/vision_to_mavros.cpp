@@ -19,9 +19,12 @@ int main(int argc, char** argv){
   tf::TransformListener tf_listener;
 
   // Wait for the first transform to become available. 
-  tf_listener.waitForTransform("/A3_bundle", "/camera_frame", ros::Time::now(), ros::Duration(3.0));
+  tf_listener.waitForTransform("/camera_odom_frame", "/camera_link", ros::Time::now(), ros::Duration(3.0));
 
   ros::Time last_tf_time = ros::Time::now();
+
+  // Limited the rate of publishing data, otherwise the other telemetry port might be flooded
+  ros::Rate rate(30.0);
 
   while (node.ok())
   {
@@ -32,7 +35,7 @@ int main(int argc, char** argv){
 
       // lookupTransform(frame_2, frame_1, at_this_time, this_transform)
       //    will give the transfrom from frame_1 to frame_2
-      tf_listener.lookupTransform("/A3_bundle", "/camera_frame", now, transform);
+      tf_listener.lookupTransform("/camera_odom_frame", "/camera_link", now, transform);
 
       // Only publish pose when we have new transform data.
       if (last_tf_time < transform.stamp_)
@@ -49,6 +52,8 @@ int main(int argc, char** argv){
         ROS_WARN("%s",ex.what());
         ros::Duration(1.0).sleep();
     }
+
+    rate.sleep();
   }
   return 0;
 };
@@ -73,7 +78,7 @@ void align_camera_frame_to_body_frame()
   // Examples some camera orientation with respect to body frame:
   //    Downfacing (Z down), X to the front: r = M_PI, p = 0, y = 0
   //    Downfacing (Z down), X to the right: r = M_PI, p = 0, y = M_PI / 2
-  static double r = M_PI, p = 0, y = M_PI / 2;
+  static double r = 0, p = 0, y = 0;
 
   quat_rot_x = tf::createQuaternionFromRPY(r, 0, 0);
   quat_rot_y = tf::createQuaternionFromRPY(0, p, 0);
