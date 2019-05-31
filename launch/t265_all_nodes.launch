@@ -1,0 +1,16 @@
+<launch>
+    <!-- Launch 3 nodes as below
+    At development stage, each node should be launched in a separated terminal to view the output -->
+
+    <!-- This node will launch the ROS driver for Realsense T265 -->
+    <include file="$(find realsense2_camera)/launch/rs_t265.launch"/>
+
+    <!-- This node will launch MAVROS -->
+    <include file="$(find mavros)/launch/apm.launch"/>
+
+    <!-- This node will launch frame conversion from vision pose (tf) to mavros pose -->
+    <node pkg="vision_to_mavros" type="vision_to_mavros_node" name="t265_to_mavros" output="screen" >
+        <remap from="vision_pose" to="/mavros/vision_pose/pose" />
+    </node>
+
+</launch>

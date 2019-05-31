@@ -2,6 +2,8 @@
 #include <tf/transform_listener.h>
 #include <geometry_msgs/PoseStamped.h>
 
+#include <string.h>
+
 tf::StampedTransform transform;
 
 geometry_msgs::PoseStamped msg_camera_pose;
@@ -18,13 +20,35 @@ int main(int argc, char** argv){
 
   tf::TransformListener tf_listener;
 
+  std::string target_frame_id = "/camera_odom_frame";
+
+  std::string source_frame_id = "/camera_link";
+
+  float output_rate = 30;
+
+  // Read parameters from launch file, including: target_frame_id, source_frame_id, output_rate
+  if(node.getParam("/target_frame_id", target_frame_id))
+    ROS_INFO("Get target_frame_id parameter: %s", target_frame_id);
+  else
+    ROS_WARN("Using default target_frame_id: %s", target_frame_id);
+
+  if(node.getParam("/source_frame_id", source_frame_id))
+    ROS_INFO("Get source_frame_id parameter: %s", source_frame_id);
+  else
+    ROS_WARN("Using default source_frame_id: %s", source_frame_id);
+
+  if(node.getParam("/output_rate", output_rate))
+    ROS_INFO("Get output_rate parameter: %d", output_rate);
+  else
+    ROS_WARN("Using default output_rate: %d", output_rate);
+
   // Wait for the first transform to become available. 
-  tf_listener.waitForTransform("/camera_odom_frame", "/camera_link", ros::Time::now(), ros::Duration(3.0));
+  tf_listener.waitForTransform(target_frame_id, source_frame_id, ros::Time::now(), ros::Duration(3.0));
 
   ros::Time last_tf_time = ros::Time::now();
 
   // Limited the rate of publishing data, otherwise the other telemetry port might be flooded
-  ros::Rate rate(30.0);
+  ros::Rate rate(output_rate);
 
   while (node.ok())
   {
@@ -35,7 +59,7 @@ int main(int argc, char** argv){
 
       // lookupTransform(frame_2, frame_1, at_this_time, this_transform)
       //    will give the transfrom from frame_1 to frame_2
-      tf_listener.lookupTransform("/camera_odom_frame", "/camera_link", now, transform);
+      tf_listener.lookupTransform(target_frame_id, source_frame_id, now, transform);
 
       // Only publish pose when we have new transform data.
       if (last_tf_time < transform.stamp_)
@@ -58,7 +82,6 @@ int main(int argc, char** argv){
   return 0;
 };
 
-
 void align_camera_frame_to_body_frame()
 {
   static tf::Vector3 position_body;
@@ -78,7 +101,7 @@ void align_camera_frame_to_body_frame()
   // Examples some camera orientation with respect to body frame:
   //    Downfacing (Z down), X to the front: r = M_PI, p = 0, y = 0
   //    Downfacing (Z down), X to the right: r = M_PI, p = 0, y = M_PI / 2
-  static double r = 0, p = 0, y = 0;
+  static double r = 0, p = 0, y = M_PI/2;
 
   quat_rot_x = tf::createQuaternionFromRPY(r, 0, 0);
   quat_rot_y = tf::createQuaternionFromRPY(0, p, 0);
@@ -91,11 +114,21 @@ void align_camera_frame_to_body_frame()
 
   msg_camera_pose.header.stamp = transform.stamp_;
   msg_camera_pose.header.frame_id = transform.frame_id_;
-  msg_camera_pose.pose.position.x = position_body.getX();
-  msg_camera_pose.pose.position.y = position_body.getY();
+  // Rotate the frames 90 degree to make the heading of world frame inline withe definition of MAVROS
+  msg_camera_pose.pose.position.x = -position_body.getY();
+  msg_camera_pose.pose.position.y = position_body.getX();
   msg_camera_pose.pose.position.z = position_body.getZ();
   msg_camera_pose.pose.orientation.x = quat_body.getX();
   msg_camera_pose.pose.orientation.y = quat_body.getY();
   msg_camera_pose.pose.orientation.z = quat_body.getZ();
   msg_camera_pose.pose.orientation.w = quat_body.getW();
+
+  // Original output of the camera in x forward format would make the yaw be 90 degrees
+  // msg_camera_pose.pose.position.x = position_body.getX();
+  // msg_camera_pose.pose.position.y = position_body.getY();
+  // msg_camera_pose.pose.position.z = position_body.getZ();
+  // msg_camera_pose.pose.orientation.x = quat_cam.getX();
+  // msg_camera_pose.pose.orientation.y = quat_cam.getY();
+  // msg_camera_pose.pose.orientation.z = quat_cam.getZ();
+  // msg_camera_pose.pose.orientation.w = quat_cam.getW();
 }
