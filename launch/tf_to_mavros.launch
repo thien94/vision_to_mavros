@@ -2,6 +2,9 @@
 
     <!-- This node will launch frame conversion from vision pose (tf) to mavros pose -->
     <node pkg="vision_to_mavros" type="vision_to_mavros_node" name="apriltags_to_mavros" output="screen" >
+        <param name="target_frame_id" value="/camera_odom_frame" />
+        <param name="source_frame_id" value="/camera_link" />
+        <param name="output_rate" value="30" />
         <remap from="vision_pose" to="/mavros/vision_pose/pose" />
     </node>
 
