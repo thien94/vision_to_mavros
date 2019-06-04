@@ -1,3 +1,6 @@
+#####################################################
+##          librealsense T265 streams test         ##
+#####################################################
 # This assumes .so file is found on the same directory
 import pyrealsense2 as rs
 
