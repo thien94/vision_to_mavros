@@ -19,6 +19,9 @@ from dronekit import connect, VehicleMode
 # Enable printing debug messages
 ENABLE_DEBUG_MSG = 0
 
+# Connection to the FCU
+connection_string = '/dev/ttyUSB0'
+
 # Global position of the origin
 lat = 13669820    # Terni 425633500 
 lon = 1036634300      # Terni  
@@ -108,7 +111,7 @@ def update_timesync(ts=0, tc=0):
 
 # Connect to the Vehicle.
 print("\nConnecting to vehicle")
-vehicle = connect('/dev/ttyUSB0', wait_ready=True, baud=921600)
+vehicle = connect(connection_string, wait_ready=True, baud=921600)
 print("\nFCU Connected")
 
 # Declare RealSense pipeline, encapsulating the actual device and sensors

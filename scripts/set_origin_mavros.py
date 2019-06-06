@@ -12,9 +12,9 @@ from mavros.mavlink import convert_to_rosmsg
 from mavros_msgs.msg import Mavlink
 
 # Global position of the origin
-lat = 42.56335 * 1e7   # Terni
-lon = 12.64329 * 1e7   # Terni
-alt = 163 * 1e3
+lat = 425633500  # Terni
+lon = 126432900  # Terni
+alt = 163000 
 
 class fifo(object):
     """ A simple buffer """
