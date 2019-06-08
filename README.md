@@ -1,10 +1,6 @@
 # vision_to_mavros
 ## Note: Ongoing project in very early stage
-ROS package that listens to `/tf`, transforms the pose of `camera_frame` to `tag_frame`, then transforms to `body_frame` with the specify roll, pitch, yaw rotations that converts the camera to the body. The first transform is done [here](https://github.com/hoangthien94/vision_to_mavros/blob/18c5186abe311615678c25ad18c9049f4913c6a1/src/vision_to_mavros.cpp#L35) while the latter [here](https://github.com/hoangthien94/vision_to_mavros/blob/18c5186abe311615678c25ad18c9049f4913c6a1/src/vision_to_mavros.cpp#L66).
-
-Example RPY for:
-- Downfacing camera (Z down), X to the front: r = M_PI, p = 0, y = 0
-- Downfacing camear (Z down), X to the right: r = M_PI, p = 0, y = M_PI / 2
+ROS package that listens to `/tf`, transforms the pose of `source_frame_id` to `target_frame_id`, then rotate the frame to match `body_frame` according to [ENU convention](https://dev.px4.io/en/ros/external_position_estimation.html#ros_reference_frames) with appropriate roll, pitch, yaw angles. 
 
 ## Installation:
 ```
@@ -14,14 +10,32 @@ cd ../
 catkin_make
 ```
 
-## Example usage:
-* With [Intel® RealSense™ Tracking Camera T265](https://www.intelrealsense.com/tracking-camera-t265/)
-```
-roslaunch vision_to_mavros t265_to_mavros.launch
-```
+## Usage with [Intel® RealSense™ Tracking Camera T265](https://www.intelrealsense.com/tracking-camera-t265/):
+
+There are 3 nodes running in this setup. In 3 separated terminals on RPi:
+
+* T265 node: `roslaunch realsense2_camera rs_t265.launch`. The topic `/camera/odom/sample/` and `/tf` should be published.
+
+* MAVROS node: `roslaunch mavros apm.launch` (with `fcu_url` and other parameters in `apm.launch` modified accordingly). 
+
+`rostopic echo /mavros/state` should show that FCU is connected.
+
+`rostopic echo /mavros/vision_pose/pose` is not published
+
+* vision_to_mavros node: `roslaunch vision_to_mavros t265_tf_to_mavros.launch`
+
+`rostopic echo /mavros/vision_pose/pose` should now show pose data from the T265.
+
+`rostopic hz /mavros/vision_pose/pose` should show that the topic is being published at 30Hz.
+
+Once you have verified each node can run successfully, next time you can launch all 3 nodes at once with: `roslaunch vision_to_mavros t265_all_nodes.launch`, with:
+
+* `rs_t265.launch` as originally provided by `realsense-ros`.
+* `apm.launch` modified with your own configuration.
+* `t265_tf_to_mavros.launch` as is.
 
 
-* With apriltags:
+## Usage with [AprilTag](https://github.com/AprilRobotics/apriltag):
 ```
 roslaunch vision_to_mavros apriltags_to_mavros.launch
 ```
