@@ -8,27 +8,7 @@
     <!-- This node will launch MAVROS -->
     <include file="$(find mavros)/launch/apm.launch"/>
 
-    <!-- This node will launch frame conversion from vision pose (tf) to mavros pose -->
-    <param name="target_frame_id"   value="/camera_odom_frame" />
-    <param name="source_frame_id"   value="/camera_link" />
-    <param name="output_rate"       value="30" />
-
-    <!-- Example for gamma_world: 
-    Original x world forward (Intel Realsense T265): -1.5707963
-    Original x world to the right (AprilTags): 0 -->
-    <param name="gamma_world"       value="-1.5707963" />
-    
-    <!-- Examples some camera orientation with respect to body frame:
-    T265 ROS, front-facing (X forward, Z upward): r = 0, p = 0, y = 1.5707963 
-    Downfacing (Z down), X to the front: r = 3.1415926,, p = 0, y = 0
-    Downfacing (Z down), X to the right: r = 3.1415926,, p = 0, y = 1.5707963 -->
-    <param name="roll_cam"          value="0" />
-    <param name="pitch_cam"         value="0" />
-    <param name="yaw_cam"           value="1.5707963" />
-
-    <node pkg="vision_to_mavros" type="vision_to_mavros_node" name="t265_to_mavros" output="screen" >
-
-    <remap from="vision_pose" to="/mavros/vision_pose/pose" />
-    </node>
+    <!-- This node will launch the node that bridges realsense-ros and MAVROS -->
+    <include file="$(find vision_to_mavros)/launch/t265_tf_to_mavros.launch"/>
 
 </launch>
