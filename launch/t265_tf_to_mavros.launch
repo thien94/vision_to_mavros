@@ -6,14 +6,12 @@
     <param name="output_rate"       value="30" />
 
     <!-- Rotate world frame around z axis: 
-    0           to get yaw 90
-    -1.5707963  to get yaw 0 -->
+    0           - yaw 90
+    -1.5707963  - yaw 0 -->
     <param name="gamma_world"       value="-1.5707963" />
     
-    <!-- Examples of some ROS orientation with respect to body frame:
-    Frontfacing (X forward, Z upward):   r = 0, p = 0, y = 1.5707963 (M_PI/2)
-    Downfacing (Z down, X to the front): r = 3.1415926, p = 0, y = 0
-    Downfacing (Z down, X to the right): r = 3.1415926, p = 0, y = 1.5707963 -->
+    <!-- Examples to align camera_link to body frame:
+    Frontfacing (X forward, Z upward):   r = 0, p = 0, y = 1.5707963 (M_PI/2)-->
     <param name="roll_cam"          value="0" />
     <param name="pitch_cam"         value="0" />
     <param name="yaw_cam"           value="1.5707963" />
