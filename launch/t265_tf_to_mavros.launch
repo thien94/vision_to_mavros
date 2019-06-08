@@ -5,16 +5,21 @@
     <param name="source_frame_id"   value="/camera_link" />
     <param name="output_rate"       value="30" />
 
-    <!-- Rotate world frame around z axis: 
-    0           - yaw 90
-    -1.5707963  - yaw 0 -->
-    <param name="gamma_world"       value="-1.5707963" />
-    
-    <!-- Examples to align camera_link to body frame:
-    Frontfacing (X forward, Z upward):   r = 0, p = 0, y = 1.5707963 (M_PI/2)-->
+    <!-- Rotate world frame around z axis with gamma
+    Examples to align camera_link to body frame:
+    Frontfacing:
+        Forward, USB port to the right (default): r = 0,          p = 0,          y = 1.5707963,  gamma = -1.5707963 
+        Forward, USB port to the left           : r = 3.1415926,  p = 0,          y = 1.5707963,  gamma = -1.5707963 
+    Downfacing: you need to tilt the camera a little (not flat down) when launch, otherwise the initial yaw will be random, read here: https://github.com/IntelRealSense/librealsense/issues/4080
+        Downfacing, USB port to the right   :   r = -1.5707963, p = -1.5707963, y = 0,          gamma = -1.5707963
+        Downfacing, USB port to the left    :   r = -1.5707963, p = -1.5707963, y = 0,          gamma = 1.5707963
+        Downfacing, USB port to the back    :   r = -1.5707963, p = -1.5707963, y = 0,          gamma = 0          
+        Downfacing, USB port to the front   :   r = -1.5707963, p = -1.5707963, y = 0,          gamma = 3.1415926
+         -->
     <param name="roll_cam"          value="0" />
     <param name="pitch_cam"         value="0" />
     <param name="yaw_cam"           value="1.5707963" />
+    <param name="gamma_world"       value="-1.5707963" />
 
     <node pkg="vision_to_mavros" type="vision_to_mavros_node" name="t265_to_mavros" output="screen" >
         <remap from="vision_pose" to="/mavros/vision_pose/pose" />

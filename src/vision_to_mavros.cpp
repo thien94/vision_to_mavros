@@ -22,7 +22,7 @@ int main(int argc, char** argv){
 
   std::string source_frame_id = "/camera_link";
 
-  double output_rate = 30, gamma_world = 0, roll_cam = 0, pitch_cam = 0, yaw_cam = 0;
+  double output_rate = 30, roll_cam = 0, pitch_cam = 0, yaw_cam = 1.5707963, gamma_world = -1.5707963;
 
   // Read parameters from launch file, including: target_frame_id, source_frame_id, output_rate
   {
