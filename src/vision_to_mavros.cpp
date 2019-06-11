@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
+#include <tf/transform_broadcaster.h>
 #include <geometry_msgs/PoseStamped.h>
 
 #include <string.h>
@@ -167,6 +168,14 @@ int main(int argc, char** argv){
 
         // Publish pose of body in world frame
         camera_pose_publisher.publish(msg_body_pose);
+
+        // Re-publish tf for usages by other nodes
+        static tf::TransformBroadcaster br;
+        static tf::Transform body_transform;
+        // Copy the information from vision_pose to body_transform
+        body_transform.setOrigin(position_body);
+        body_transform.setRotation(quat_body);
+        br.sendTransform(tf::StampedTransform(body_transform, ros::Time::now(), "world", "body_frame"));
       }
     }
     catch (tf::TransformException ex)
