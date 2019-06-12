@@ -67,7 +67,7 @@ Once you have verified each node can run successfully, next time you can launch 
 * `t265_tf_to_mavros.launch` as is.
 
 ## View trajectory on rviz:
-How to view trajector on rviz:
+After running ```roslaunch vision_to_mavros t265_all_node.launch```, here's how to view the trajectory of t265 on rviz:
 1. Install [`hector_trajectory_server`](http://wiki.ros.org/hector_trajectory_server): 
 ```sudo apt-get install ros-<distro>-hector_trajectory_server```
 2. Run `roslaunch show_trajectory.launch` on either:
