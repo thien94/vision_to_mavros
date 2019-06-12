@@ -66,6 +66,14 @@ Once you have verified each node can run successfully, next time you can launch 
 * `apm.launch` modified with your own configuration.
 * `t265_tf_to_mavros.launch` as is.
 
+## View trajectory on rviz:
+How to view trajector on rviz:
+1. Install [`hector_trajectory_server`](http://wiki.ros.org/hector_trajectory_server): 
+```sudo apt-get install ros-<distro>-hector_trajectory_server```
+2. Run `roslaunch show_trajectory.launch` on either:
+   - Host PC with monitor (with correct ROS_MASTER_URI)
+   - Onboard computer (in which case comment out rviz)
+3. Add [`Path`](http://docs.ros.org/api/nav_msgs/html/msg/Path.html), topic name: `/t265/trajectory` to rviz. 
 
 ### Usage with [AprilTag](https://github.com/AprilRobotics/apriltag):
 ```
