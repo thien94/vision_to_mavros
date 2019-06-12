@@ -30,21 +30,21 @@ int main(int argc, char** argv){
     // The frame in which we find the transform into, the original "world" frame
     if(node.getParam("target_frame_id", target_frame_id))
     {
-      ROS_INFO("Get target_frame_id parameter: %s", target_frame_id);
+      ROS_INFO("Get target_frame_id parameter: %s", target_frame_id.c_str());
     }
     else
     {
-      ROS_WARN("Using default target_frame_id: %s", target_frame_id);
+      ROS_WARN("Using default target_frame_id: %s", target_frame_id.c_str());
     }
 
     // The frame for which we find the tranform to target_frame_id, the original "camera" frame
     if(node.getParam("source_frame_id", source_frame_id))
     {
-      ROS_INFO("Get source_frame_id parameter: %s", source_frame_id);
+      ROS_INFO("Get source_frame_id parameter: %s", source_frame_id.c_str());
     }
     else
     {
-      ROS_WARN("Using default source_frame_id: %s", source_frame_id);
+      ROS_WARN("Using default source_frame_id: %s", source_frame_id.c_str());
     }
 
     // The rate at which we wish to publish final pose data

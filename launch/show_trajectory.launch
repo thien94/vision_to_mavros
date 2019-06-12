@@ -1,5 +1,13 @@
 <?xml version="1.0"?>
 <launch>
+    <!-- How to view trajector on rviz:
+    1. Install hector_trajectory_server: sudo apt-get install ros-<distro>-hector_trajectory_server
+    2. Run this launch file on either:
+        - host PC with monitor (with correct ROS_MASTER_URI)
+        - onboard computer (in which case comment out rviz)
+    3. Add path to rviz 
+    -->
+
     <!-- Trajectory server to show path on rviz -->
     <arg name="parent_frame" value="world"/>
     <arg name="child_frame" value="body_frame"/>
