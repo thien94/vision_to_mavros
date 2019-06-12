@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Trajectory server to show path on rviz -->
+    <arg name="parent_frame" value="world"/>
+    <arg name="child_frame" value="body_frame"/>
+
+    <node pkg="hector_trajectory_server" type="hector_trajectory_server" name="trajectory_server" output="screen" ns="t265" >
+        <param name="/target_frame_name" value="$(arg parent_frame)" />
+        <param name="/source_frame_name" value="$(arg child_frame)" />
+        <param name="/trajectory_update_rate" value="30.0" />
+        <param name="/trajectory_publish_rate" value="30.0" />
+    </node>
+
+    <node type="rviz" name="rviz" pkg="rviz" />
+</launch>

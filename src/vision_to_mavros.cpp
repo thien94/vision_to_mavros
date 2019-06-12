@@ -125,11 +125,7 @@ int main(int argc, char** argv){
 
         static tf::Vector3 position_orig, position_body;
 
-        static tf::Quaternion quat_cam, quat_rot_x, quat_rot_y, quat_rot_z, quat_body;
-
-        // Two rotations needed to be done, in order to align frames with what MAVROS want:
-        //    1. World frame with y forward (ENU)
-        //    2. Body frame with x forward (ENU)
+        static tf::Quaternion quat_cam, quat_cam_to_body_x, quat_cam_to_body_y, quat_cam_to_body_z, quat_rot_z, quat_body;
 
         // 1) Rotation from original world frame to world frame with y forward.
         // See the full rotation matrix at https://en.wikipedia.org/wiki/Rotation_matrix#Basic_rotations
@@ -140,19 +136,16 @@ int main(int argc, char** argv){
         position_body.setZ(position_orig.getZ());
 
         // 2) Rotation from camera to body frame.
-        // In each step, rotate the camera frame around its own axis (roll = x, pitch = y, yaw = z)
-        // so that at the end, the camera frame is aligned with the body frame (ENU, x forward, y to the left, z upwards)
-        //    Step 1: Take a look at the camera frame in the world frame
-        //    Step 2: Rotate camera frame around its x axis -> roll angle (radians)
-        //    Step 3: From the new frame, rotate camera frame around its current y axis -> pitch angle (radians)
-        //    Step 4: From the new frame, rotate camera frame around its current z axis -> yaw angle (radians)
         quat_cam = transform.getRotation();
 
-        quat_rot_x = tf::createQuaternionFromRPY(roll_cam, 0, 0);
-        quat_rot_y = tf::createQuaternionFromRPY(0, pitch_cam, 0);
-        quat_rot_z = tf::createQuaternionFromRPY(0, 0, yaw_cam);
+        quat_cam_to_body_x = tf::createQuaternionFromRPY(roll_cam, 0, 0);
+        quat_cam_to_body_y = tf::createQuaternionFromRPY(0, pitch_cam, 0);
+        quat_cam_to_body_z = tf::createQuaternionFromRPY(0, 0, yaw_cam);
+        
+        // 3) Rotate body frame 90 degree (align body x with world y at launch)
+        quat_rot_z = tf::createQuaternionFromRPY(0, 0, -gamma_world);
 
-        quat_body = quat_cam * quat_rot_x * quat_rot_y * quat_rot_z;
+        quat_body = quat_rot_z * quat_cam * quat_cam_to_body_x * quat_cam_to_body_y * quat_cam_to_body_z;
         quat_body.normalize();
 
         // Create PoseStamped message to be sent
@@ -169,7 +162,7 @@ int main(int argc, char** argv){
         // Publish pose of body in world frame
         camera_pose_publisher.publish(msg_body_pose);
 
-        // Re-publish tf for usages by other nodes
+        // Re-publish data as tf world -> body_frame
         static tf::TransformBroadcaster br;
         static tf::Transform body_transform;
         // Copy the information from vision_pose to body_transform

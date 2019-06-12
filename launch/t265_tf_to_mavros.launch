@@ -5,20 +5,22 @@
     <param name="source_frame_id"   value="/camera_link" />
     <param name="output_rate"       value="30" />
 
-    <!-- Rotate world frame around z axis with gamma
-    Examples to align camera_link to body frame:
+    <!-- Two steps alignment: 
+    1) r,p,y: align current camera frame with default camera frame (x forward, y left, z up)
+    2) gamma: align default camera frame's x axis with world y axis
     Frontfacing:
-        Forward, USB port to the right (default): r = 0,          p = 0,          y = 1.5707963,  gamma = -1.5707963 
-        Forward, USB port to the left           : r = 3.1415926,  p = 0,          y = 1.5707963,  gamma = -1.5707963 
-    Downfacing: you need to tilt the camera a little (not flat down) when launch, otherwise the initial yaw will be random, read here: https://github.com/IntelRealSense/librealsense/issues/4080
-        Downfacing, USB port to the right   :   r = -1.5707963, p = -1.5707963, y = 0,          gamma = -1.5707963
-        Downfacing, USB port to the left    :   r = -1.5707963, p = -1.5707963, y = 0,          gamma = 1.5707963
-        Downfacing, USB port to the back    :   r = -1.5707963, p = -1.5707963, y = 0,          gamma = 0          
-        Downfacing, USB port to the front   :   r = -1.5707963, p = -1.5707963, y = 0,          gamma = 3.1415926
-         -->
+        Forward, USB port to the right (default): r = 0,          p = 0,          y = 0,  gamma = -1.5707963 
+        Forward, USB port to the left           : r = 3.1415926,  p = 0,          y = 0,  gamma = -1.5707963 
+    Downfacing: you need to tilt the vehicle's nose up a little (not flat) when launch the T265 realsense-ros node, otherwise the initial yaw will be randomized, read here: https://github.com/IntelRealSense/librealsense/issues/4080
+    Tilt the vehicle to any other sides and the yaw might not be as stable.
+        Downfacing, USB port to the right :       r = 0,          p = -1.5707963, y = 0,  gamma = -1.5707963
+        Downfacing, USB port to the left  :       r = 3.1415926,  p = -1.5707963, y = 0,  gamma = -1.5707963
+        Downfacing, USB port to the back  :       r = -1.5707963, p = -1.5707963, y = 0,  gamma = -1.5707963          
+        Downfacing, USB port to the front :       r = 1.5707963,  p = -1.5707963, y = 0,  gamma = -1.5707963
+    -->
     <param name="roll_cam"          value="0" />
     <param name="pitch_cam"         value="0" />
-    <param name="yaw_cam"           value="1.5707963" />
+    <param name="yaw_cam"           value="0" />
     <param name="gamma_world"       value="-1.5707963" />
 
     <node pkg="vision_to_mavros" type="vision_to_mavros_node" name="t265_to_mavros" output="screen" >

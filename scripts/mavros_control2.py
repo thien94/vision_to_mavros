@@ -150,10 +150,14 @@ def simple_demo():
     c.takeoff(1.0)
     rospy.sleep(7)
 
-    r = 0.4
-    c.goto_xyz_rpy(0.2, 0.3, 1.0, 0, 0, 0)
+    r = 1
+    circle_center_x = 0.0
+    circle_center_y = 0.0
+    circle_height = 1.0
+
+    c.goto_xyz_rpy(circle_center_x, circle_center_y, circle_height, 0, 0, 0)
     rospy.sleep(3)
-    c.goto_xyz_rpy(0.2 + r, 0.3, 1.0, 0, 0, 0)
+    c.goto_xyz_rpy(circle_center_x + r, circle_center_y, circle_height, 0, 0, 0)
     rospy.sleep(3)
 
     # for i in range(10):
@@ -163,15 +167,15 @@ def simple_demo():
 
     for i in range(360):
         theta = i * 2.0 * pi / 180.0
-        x = 0.2 + r * math.cos(theta);
-        y = 0.3 + r * math.sin(theta);
-        z = 1.0;
+        x = circle_center_x + r * math.cos(theta);
+        y = circle_center_y + r * math.sin(theta);
+        z = circle_height;
         c.goto_xyz_rpy(x, y, z, 0.0, 0.0, theta)
         rospy.sleep(0.1)
 
     rospy.sleep(3)
 
-    c.goto_xyz_rpy(0.0, 0.0, 1.0, 0, 0, 0)
+    c.goto_xyz_rpy(0.0, 0.0, circle_height, 0, 0, 0)
     rospy.sleep(3)
 
     #print("Velocity Setpoint 1")
