@@ -2,6 +2,7 @@
 #include <tf/transform_listener.h>
 #include <tf/transform_broadcaster.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <nav_msgs/Path.h>
 
 #include <string.h>
 
@@ -13,11 +14,15 @@ int main(int argc, char** argv){
   
   ros::Publisher camera_pose_publisher = node.advertise<geometry_msgs::PoseStamped>("vision_pose", 10);
 
+  ros::Publisher body_path_pubisher = node.advertise<nav_msgs::Path>("body_frame/path", 1);
+
   tf::TransformListener tf_listener;
 
   tf::StampedTransform transform;
 
   geometry_msgs::PoseStamped msg_body_pose;
+
+  nav_msgs::Path body_path;
 
   std::string target_frame_id = "/camera_odom_frame";
 
@@ -159,16 +164,14 @@ int main(int argc, char** argv){
         msg_body_pose.pose.orientation.z = quat_body.getZ();
         msg_body_pose.pose.orientation.w = quat_body.getW();
 
-        // Publish pose of body in world frame
+        // Publish pose of body frame in world frame
         camera_pose_publisher.publish(msg_body_pose);
 
-        // Re-publish data as tf world -> body_frame
-        static tf::TransformBroadcaster br;
-        static tf::Transform body_transform;
-        // Copy the information from vision_pose to body_transform
-        body_transform.setOrigin(position_body);
-        body_transform.setRotation(quat_body);
-        br.sendTransform(tf::StampedTransform(body_transform, ros::Time::now(), "world", "body_frame"));
+        // Publish trajectory path for visualization
+        body_path.header.stamp = msg_body_pose.header.stamp;
+        body_path.header.frame_id = msg_body_pose.header.frame_id;
+        body_path.poses.push_back(msg_body_pose);
+        body_path_pubisher.publish(body_path);
       }
     }
     catch (tf::TransformException ex)
