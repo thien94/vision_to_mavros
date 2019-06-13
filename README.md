@@ -36,6 +36,7 @@ catkin_make
 
 ### Published topic:
 * `/vision_pose` of type [geometry_msgs/PoseStamped](http://docs.ros.org/api/geometry_msgs/html/msg/PoseStamped.html) - single pose to be sent to the FCU autopilot (ArduPilot / PX4), published at a frequency defined by `output_rate`.
+* `/body_frame/path` of type [nav_msgs/Path](http://docs.ros.org/api/nav_msgs/html/msg/Path.html) - visualize trajectory of body frame in rviz.
 
 ## Example applications
 ### Autonomous flight with [Intel® RealSense™ Tracking Camera T265](https://www.intelrealsense.com/tracking-camera-t265/) and [ArduPilot](http://ardupilot.org/):
@@ -66,14 +67,12 @@ Once you have verified each node can run successfully, next time you can launch 
 * `apm.launch` modified with your own configuration.
 * `t265_tf_to_mavros.launch` as is.
 
-## View trajectory on rviz:
+## View trajectory on rviz
 After running ```roslaunch vision_to_mavros t265_all_node.launch```, here's how to view the trajectory of t265 on rviz:
-1. Install [`hector_trajectory_server`](http://wiki.ros.org/hector_trajectory_server): 
-```sudo apt-get install ros-<distro>-hector_trajectory_server```
-2. Run `roslaunch show_trajectory.launch` on either:
-   - Host PC with monitor (with correct ROS_MASTER_URI)
-   - Onboard computer (in which case comment out rviz)
-3. Add [`Path`](http://docs.ros.org/api/nav_msgs/html/msg/Path.html), topic name: `/t265/trajectory` to rviz. 
+1. On host computer, open up rviz: `rosrun rviz rviz`.
+2. Add [`Path`](http://docs.ros.org/api/nav_msgs/html/msg/Path.html), topic name: `/body_frame/path` to rviz. 
+
+<p align="center"><img src="https://files.gitter.im/hoangthien94/NKIn/Screenshot-from-2019-06-11-18-47-46.png"/> 
 
 ### Usage with [AprilTag](https://github.com/AprilRobotics/apriltag):
 ```
