@@ -71,8 +71,9 @@ Once you have verified each node can run successfully, next time you can launch 
 After running ```roslaunch vision_to_mavros t265_all_nodes.launch```, here's how to view the trajectory of t265 on rviz:
 1. On host computer, open up rviz: `rosrun rviz rviz`.
 2. Add [`Path`](http://docs.ros.org/api/nav_msgs/html/msg/Path.html), topic name: `/body_frame/path` to rviz. 
+3. Change `Fixed Frame` to `target_frame_id`, in the case of Realsense T265: `camera_odom_frame`.
 
-<p align="center"><img src="https://files.gitter.im/hoangthien94/NKIn/Screenshot-from-2019-06-11-18-47-46.png"/> 
+<p align="center"><img src="https://i.imgur.com/Kp8y2Ts.png"/> 
 
 ### Usage with [AprilTag](https://github.com/AprilRobotics/apriltag):
 ```
