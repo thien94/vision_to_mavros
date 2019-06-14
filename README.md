@@ -20,6 +20,15 @@ git clone https://github.com/hoangthien94/vision_to_mavros.git
 cd ../
 catkin_make
 ```
+## How it works
+- Suppose we have a frame named `source_frame_id` that is measured in a frame named `target_frame_id`. Let `target_frame_id` be the `world {W}` frame, we want to transform `source_frame_id` to `body {B}` frame so that `{B}` and `{W}` conform to `ENU` convention (x is pointing to East direction, y is pointing to the North and z is pointing up).
+
+<p align="center"><img src="https://i.imgur.com/IxkSIt2.png"/> 
+
+- Now assume we already have a default `{B}` and `{W}` that are correct in `ENU`. We will rotate `{B}` in `{W}` by an angle `gamma_world`, in right hand rule. For example, `gamma_world` equals `-1.5707963 (-PI/2)` will make `{B}`'s x axis aligns with `{W}`'s y axis.
+
+- `source_frame_id` will be aligned with that default `{B}` by rotating around its own x, y, z axis by angles defined by `roll_cam`, `pitch_cam`, `yaw_cam`, in that order.
+
 ## Node: vision_to_mavros
 
 ### Parameters:
@@ -28,8 +37,6 @@ catkin_make
 * `source_frame_id`: id of source frame (camera/imu/body_link)
 * `output_rate`: the output rate at which the pose data will be published.
 * `roll_cam`, `pitch_cam`, `yaw_cam`, `gamma_world`: angles (in radians) that will convert pose received from `source_frame_id` to body frame, according to ENU conventions.
-
-<p align="center"><img src="https://i.imgur.com/IxkSIt2.png"/> 
 
 ### Subscribed topic:
 * `/tf` containing pose/odometry data.
