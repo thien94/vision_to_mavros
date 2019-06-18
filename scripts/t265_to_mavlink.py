@@ -13,25 +13,52 @@ import numpy as np
 import transformations as tf
 import math as m
 import time
+import argparse
 
 from dronekit import connect, VehicleMode
 
-# Enable printing debug messages
-ENABLE_DEBUG_MSG = 0
-
-# Connection to the FCU
-connection_string = '/dev/ttyUSB0'
+#######################################
+# Parameters
+#######################################
+# Default connection configuration to the FCU
+connection_string_default = '/dev/ttyUSB0'
+connection_baudrate_default = 921600
 
 # Global position of the origin
-lat = 13669820    # Terni 425633500 
-lon = 1036634300      # Terni  
-alt = 163000 
+home_lat = 151269321       # Somewhere in Africa
+home_lon = 16624301        # Somewhere in Africa
+home_alt = 163000 
 
 # For forward-facing camera (with X to the right):  H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
 # For down-facing camera (with X to the right):     H_aeroRef_T265Ref = np.array([[0,1, 0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
 # TODO: Explain this transformation with visual example
 H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
 H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
+
+vehicle = None
+pipe = None
+
+#######################################
+# Parsing connection configurations
+#######################################
+
+parser = argparse.ArgumentParser(description='Reboots vehicle')
+parser.add_argument('--connect',
+                    help="Vehicle connection target string. If not specified, a default string will be used.")
+parser.add_argument('--baudrate',
+                    help="Vehicle connection baudrate. If not specified, a default value will be used.")
+args = parser.parse_args()
+
+connection_string = args.connect
+connection_baudrate = args.baudrate
+# Using default values if no specified inputs
+if not connection_string:
+    connection_string = connection_string_default
+    print("INFO: Using default connection_string", connection_string)
+
+if not connection_baudrate:
+    connection_baudrate = connection_baudrate_default
+    print("INFO: Using default connection_baudrate", connection_baudrate_default)
 
 #######################################
 # Functions
@@ -54,18 +81,18 @@ def send_vision_position_message(x,y,z,roll,pitch,yaw):
     vehicle.flush()
 
 # Send a mavlink SET_GPS_GLOBAL_ORIGIN message (http://mavlink.org/messages/common#SET_GPS_GLOBAL_ORIGIN), which allows us to use local position information without a GPS.
-def set_fake_global_origin():
+def set_default_global_origin():
     msg = vehicle.message_factory.set_gps_global_origin_encode(
         int(vehicle._master.source_system),
-        lat, 
-        lon,
-        alt
+        home_lat, 
+        home_lon,
+        home_alt
     )
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
 # Send a mavlink SET_HOME_POSITION message (http://mavlink.org/messages/common#SET_HOME_POSITION), which should allow us to use local position information without a GPS
-def set_fake_home_position():
+def set_default_home_position():
     x = 0
     y = 0
     z = 0
@@ -77,9 +104,9 @@ def set_fake_home_position():
 
     msg = vehicle.message_factory.set_home_position_encode(
         int(vehicle._master.source_system),
-        lat, 
-        lon,
-        alt,
+        home_lat, 
+        home_lon,
+        home_alt,
         x,
         y,
         z,
@@ -104,33 +131,60 @@ def update_timesync(ts=0, tc=0):
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
+# Listen to "GPS Glitch" and "GPS Glitch cleared" message, then set EKF home automatically
+def statustext_callback(self, attr_name, value):
+    # print("INFO: Received STATUSTEXT message")
+    # print(value.text)
+    if value.text == "GPS Glitch" or value.text == "GPS Glitch cleared":
+        time.sleep(0.1)
+        print("INFO: Set EKF home with default GPS location")
+        set_default_global_origin()
+        set_default_home_position()
+
+def vehicle_connect():
+    global vehicle
+    
+    try:
+        vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate)
+    except:
+        print('Connection error! Retrying...')
+
+    if vehicle == None:
+        return False
+    else:
+        return True
+
+def realsense_connect():
+    global pipe
+    # Declare RealSense pipeline, encapsulating the actual device and sensors
+    pipe = rs.pipeline()
+
+    # Build config object and request pose data
+    cfg = rs.config()
+
+    # Enable the stream we are interested in
+    cfg.enable_stream(rs.stream.pose) # Positional data 
+
+    # Start streaming with requested config
+    pipe.start(cfg)
 
 #######################################
 # Main code starts here
 #######################################
 
-# Connect to the Vehicle.
-print("\nConnecting to vehicle")
-vehicle = connect(connection_string, wait_ready=True, baud=921600)
-print("\nFCU Connected")
+print("INFO: Connecting to Realsense camera")
+realsense_connect()
+print("INFO: Realsense connected")
 
-# Declare RealSense pipeline, encapsulating the actual device and sensors
-pipe = rs.pipeline()
+print("INFO: Connecting to vehicle")
+while (not vehicle_connect()):
+    pass
+print("INFO: Vehicle connected")
 
-print("\nRealsense connected")
-# Build config object and request pose data
-cfg = rs.config()
+# Listen to the mavlink messages
+vehicle.add_message_listener('STATUSTEXT', statustext_callback)
 
-# Enable the stream we are interested in
-cfg.enable_stream(rs.stream.pose) # Positional data 
-
-# Start streaming with requested config
-pipe.start(cfg)
-
-print("\nSending vision pose messages to FCU through MAVLink NOW\n")
-
-set_home_repeat = 0
-
+print("INFO: Sending vision pose messages to FCU through MAVLink")
 try:
     while True:
         # Wait for the next set of frames from the camera
@@ -158,25 +212,12 @@ try:
             # Send MAVLINK VISION_POSITION_MESSAGE to FUC 
             send_vision_position_message(-data.translation.z, data.translation.x, -data.translation.y, rpy_rad[0], rpy_rad[1], rpy_rad[2])
 
-            if ENABLE_DEBUG_MSG:
-                rpy_deg = rpy_rad * 180 / m.pi
-                print("Frame #{}".format(pose.frame_number), "RPY [deg]: {}".format(rpy_deg))
-
             # Skip some messages
             time.sleep(0.05)
-
-            # Set fake home position through MAVLink
-            # TODO: For sure there can be a more methodological approach
-            if set_home_repeat == 100 or set_home_repeat == 200:
-                print("\nAttempt to set home origin")
-                set_fake_global_origin()
-                set_fake_home_position()
-
-            set_home_repeat = set_home_repeat + 1
                 
 finally:
     pipe.stop()
 
     #Close vehicle object before exiting script
-    print("\nClose vehicle object")
+    print("INFO: Close vehicle object")
     vehicle.close()
