@@ -15,6 +15,7 @@ import math as m
 import time
 import argparse
 from dronekit import connect, VehicleMode
+from pymavlink import mavutil
 
 #######################################
 # Parameters
@@ -25,10 +26,19 @@ connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 30
 
-# Transformation to convert different camera orientations to NED convention
-#   For forward-facing camera (with X to the right):  H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-#   For down-facing camera (with X to the right):     H_aeroRef_T265Ref = np.array([[0,1, 0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
 # TODO: Explain this transformation by visualization
+# Transformation to convert different camera orientations to NED convention
+# Frontfacing:
+#     Forward, USB port to the right (default): 
+#           H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
+#           H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
+#     Forward, USB port to the left: 
+# Downfacing (you need to tilt the vehicle's nose up a little (not flat) when launch the T265 realsense-ros node, otherwise the initial yaw will be randomized, read here: https://github.com/IntelRealSense/librealsense/issues/4080
+# Tilt the vehicle to any other sides and the yaw might not be as stable):
+#     Downfacing, USB port to the right : H_aeroRef_T265Ref = np.array([[0,1, 0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
+#     Downfacing, USB port to the left  : 
+#     Downfacing, USB port to the back  :         
+#     Downfacing, USB port to the front : 
 H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
 H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 
@@ -88,8 +98,6 @@ def send_vision_position_message(x,y,z,roll,pitch,yaw):
         roll,	        #Roll angle
         pitch,	        #Pitch angle
         yaw	            #Yaw angle
-        #0              #covariance :upper right triangle (states: x, y, z, roll, pitch, ya
-        #0              #reset_counter:Estimate reset counter. 
     )
     vehicle.send_mavlink(msg)
     vehicle.flush()
@@ -141,6 +149,21 @@ def update_timesync(ts=0, tc=0):
     msg = vehicle.message_factory.timesync_encode(
         tc,     # tc1
         ts      # ts1
+    )
+    vehicle.send_mavlink(msg)
+    vehicle.flush()
+
+# Pack the confidence level into a message that is not being process and send to FCU, to be able to view it on GCS
+def send_confidence_level_dummy_message():
+    #Send message using `command_long_encode` (returns an ACK)
+    msg = vehicle.message_factory.global_vision_position_estimate_encode(
+        data.tracker_confidence,	#us	Timestamp (UNIX time or time since system boot)
+        0,	            #Global X position
+        0,              #Global Y position
+        0,	            #Global Z position
+        0,	            
+        0,	            
+        0	            
     )
     vehicle.send_mavlink(msg)
     vehicle.flush()
@@ -230,6 +253,7 @@ try:
             send_vision_position_message(H_aeroRef_aeroBody[0][3], H_aeroRef_aeroBody[1][3], H_aeroRef_aeroBody[2][3], rpy_rad[0], rpy_rad[1], rpy_rad[2])
 
             print("INFO: Tracker confidence: ", pose_data_confidence_level[data.tracker_confidence])
+            send_confidence_level_dummy_message()
 
             # We don't want to flood the FCU
             time.sleep(1.0/vision_msg_hz)
