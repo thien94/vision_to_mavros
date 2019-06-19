@@ -20,19 +20,20 @@ from dronekit import connect, VehicleMode
 # Parameters
 #######################################
 
-# Default connection configuration to the FCU
+# Default configurations for connection to the FCU
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 30
 
-# Global position of the origin
+# Default global position of home/ origin
 home_lat = 151269321       # Somewhere in Africa
 home_lon = 16624301        # Somewhere in Africa
 home_alt = 163000 
 
-# For forward-facing camera (with X to the right):  H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-# For down-facing camera (with X to the right):     H_aeroRef_T265Ref = np.array([[0,1, 0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
-# TODO: Explain this transformation with visual example
+# Transformation to convert different camera orientations to NED convention
+#   For forward-facing camera (with X to the right):  H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
+#   For down-facing camera (with X to the right):     H_aeroRef_T265Ref = np.array([[0,1, 0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
+# TODO: Explain this transformation by visualization
 H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
 H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 
@@ -212,6 +213,9 @@ try:
             
             # In transformations, Quaternions w+ix+jy+kz are represented as [w, x, y, z]!
             H_T265Ref_T265body = tf.quaternion_matrix([data.rotation.w, data.rotation.x, data.rotation.y, data.rotation.z]) 
+            H_T265Ref_T265body[0][3] = data.translation.x
+            H_T265Ref_T265body[1][3] = data.translation.y
+            H_T265Ref_T265body[2][3] = data.translation.z
 
             # Transform to aeronautic coordinates (body AND reference frame!)
             H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody ))
@@ -220,7 +224,7 @@ try:
             rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
 
             # Send MAVLINK VISION_POSITION_MESSAGE to FCU
-            send_vision_position_message(-data.translation.z, data.translation.x, -data.translation.y, rpy_rad[0], rpy_rad[1], rpy_rad[2])
+            send_vision_position_message(H_aeroRef_aeroBody[0][3], H_aeroRef_aeroBody[1][3], H_aeroRef_aeroBody[2][3], rpy_rad[0], rpy_rad[1], rpy_rad[2])
 
             # We don't want to flood the FCU
             time.sleep(1.0/vision_msg_hz)
