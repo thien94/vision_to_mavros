@@ -14,15 +14,16 @@ import transformations as tf
 import math as m
 import time
 import argparse
-
 from dronekit import connect, VehicleMode
 
 #######################################
 # Parameters
 #######################################
+
 # Default connection configuration to the FCU
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
+vision_msg_hz_default = 30
 
 # Global position of the origin
 home_lat = 151269321       # Somewhere in Africa
@@ -39,7 +40,7 @@ vehicle = None
 pipe = None
 
 #######################################
-# Parsing connection configurations
+# Connection configurations
 #######################################
 
 parser = argparse.ArgumentParser(description='Reboots vehicle')
@@ -47,10 +48,15 @@ parser.add_argument('--connect',
                     help="Vehicle connection target string. If not specified, a default string will be used.")
 parser.add_argument('--baudrate',
                     help="Vehicle connection baudrate. If not specified, a default value will be used.")
+parser.add_argument('--vision_msg_hz',
+                    help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
+
 args = parser.parse_args()
 
 connection_string = args.connect
 connection_baudrate = args.baudrate
+vision_msg_hz = args.vision_msg_hz
+
 # Using default values if no specified inputs
 if not connection_string:
     connection_string = connection_string_default
@@ -59,6 +65,10 @@ if not connection_string:
 if not connection_baudrate:
     connection_baudrate = connection_baudrate_default
     print("INFO: Using default connection_baudrate", connection_baudrate_default)
+
+if not vision_msg_hz:
+    vision_msg_hz = vision_msg_hz_default
+    print("INFO: Using default vision_msg_hz", vision_msg_hz)
 
 #######################################
 # Functions
@@ -91,7 +101,7 @@ def set_default_global_origin():
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
-# Send a mavlink SET_HOME_POSITION message (http://mavlink.org/messages/common#SET_HOME_POSITION), which should allow us to use local position information without a GPS
+# Send a mavlink SET_HOME_POSITION message (http://mavlink.org/messages/common#SET_HOME_POSITION), which allows us to use local position information without a GPS.
 def set_default_home_position():
     x = 0
     y = 0
@@ -119,7 +129,7 @@ def set_default_home_position():
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
-# Request a timesync update from the flight controller
+# Request a timesync update from the flight controller, for future work.
 # TODO: Inspect the usage of timesync_update 
 def update_timesync(ts=0, tc=0):
     if ts == 0:
@@ -131,7 +141,7 @@ def update_timesync(ts=0, tc=0):
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
-# Listen to "GPS Glitch" and "GPS Glitch cleared" message, then set EKF home automatically
+# Listen to "GPS Glitch" and "GPS Glitch cleared" message, then set EKF home automatically.
 def statustext_callback(self, attr_name, value):
     # print("INFO: Received STATUSTEXT message")
     # print(value.text)
@@ -184,7 +194,7 @@ print("INFO: Vehicle connected")
 # Listen to the mavlink messages
 vehicle.add_message_listener('STATUSTEXT', statustext_callback)
 
-print("INFO: Sending vision pose messages to FCU through MAVLink")
+print("INFO: Sending VISION_POSITION_ESTIMATE messages to FCU through MAVLink")
 try:
     while True:
         # Wait for the next set of frames from the camera
@@ -197,7 +207,7 @@ try:
             # Store the timestamp for MAVLink messages
             current_time = int(round(time.time() * 1000000))
 
-            # Print some of the pose data to the terminal
+            # Pose data consists of translation and rotation
             data = pose.get_pose_data()
             
             # In transformations, Quaternions w+ix+jy+kz are represented as [w, x, y, z]!
@@ -209,11 +219,11 @@ try:
             # 'sxyz': Rz(yaw)*Ry(pitch)*Rx(roll) body w.r.t. reference frame
             rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
 
-            # Send MAVLINK VISION_POSITION_MESSAGE to FUC 
+            # Send MAVLINK VISION_POSITION_MESSAGE to FCU
             send_vision_position_message(-data.translation.z, data.translation.x, -data.translation.y, rpy_rad[0], rpy_rad[1], rpy_rad[2])
 
-            # Skip some messages
-            time.sleep(0.05)
+            # We don't want to flood the FCU
+            time.sleep(1.0/vision_msg_hz)
                 
 finally:
     pipe.stop()
