@@ -25,11 +25,6 @@ connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 30
 
-# Default global position of home/ origin
-home_lat = 151269321       # Somewhere in Africa
-home_lon = 16624301        # Somewhere in Africa
-home_alt = 163000 
-
 # Transformation to convert different camera orientations to NED convention
 #   For forward-facing camera (with X to the right):  H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
 #   For down-facing camera (with X to the right):     H_aeroRef_T265Ref = np.array([[0,1, 0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
@@ -37,8 +32,16 @@ home_alt = 163000
 H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
 H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 
+# Default global position of home/ origin
+home_lat = 151269321       # Somewhere in Africa
+home_lon = 16624301        # Somewhere in Africa
+home_alt = 163000 
+
 vehicle = None
 pipe = None
+
+# pose data confidence: 0x0 - Failed / 0x1 - Low / 0x2 - Medium / 0x3 - High 
+pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
 
 #######################################
 # Connection configurations
@@ -226,9 +229,14 @@ try:
             # Send MAVLINK VISION_POSITION_MESSAGE to FCU
             send_vision_position_message(H_aeroRef_aeroBody[0][3], H_aeroRef_aeroBody[1][3], H_aeroRef_aeroBody[2][3], rpy_rad[0], rpy_rad[1], rpy_rad[2])
 
+            print("INFO: Tracker confidence: ", pose_data_confidence_level[data.tracker_confidence])
+
             # We don't want to flood the FCU
             time.sleep(1.0/vision_msg_hz)
-                
+
+except KeyboardInterrupt:
+    print("INFO: KeyboardInterrupt has been caught. Cleaning up...")               
+
 finally:
     pipe.stop()
 
