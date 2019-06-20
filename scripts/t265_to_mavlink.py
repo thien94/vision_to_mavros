@@ -7,7 +7,10 @@
 #   pip install transformations
 #   pip install dronekit
 
-# First import the libraries
+# Set MAVLink protocol to 2.
+import os
+os.environ["MAVLINK20"] = "1"
+# Import the libraries
 import pyrealsense2 as rs
 import numpy as np
 import transformations as tf
@@ -153,18 +156,17 @@ def update_timesync(ts=0, tc=0):
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
-# Pack the confidence level into a message that is not being process and send to FCU, to be able to view it on GCS
+# Pack the confidence level into a message that is not being process and send to FCU, so we can view it on GCS
 def send_confidence_level_dummy_message():
-    #Send message using `command_long_encode` (returns an ACK)
-    msg = vehicle.message_factory.global_vision_position_estimate_encode(
-        data.tracker_confidence,	#us	Timestamp (UNIX time or time since system boot)
-        0,	            #Global X position
-        0,              #Global Y position
-        0,	            #Global Z position
-        0,	            
-        0,	            
-        0	            
+    msg = vehicle.message_factory.vision_position_delta_encode(
+        0,	            #us	Timestamp (UNIX time or time since system boot)
+        0,	            #Time since last reported camera frame
+        [0, 0, 0],      #angle_delta
+        [0, 0, 0],      #position_delta
+        float(data.tracker_confidence * 100 / 3)     # 0% - Failed / 33.3% - Low / 66.6% - Medium / 100% - High      
     )
+    # NOTE: Sometimes sending the message once does not get through to Mission Planner
+    vehicle.send_mavlink(msg)
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
@@ -222,6 +224,8 @@ print("INFO: Vehicle connected")
 vehicle.add_message_listener('STATUSTEXT', statustext_callback)
 
 print("INFO: Sending VISION_POSITION_ESTIMATE messages to FCU through MAVLink")
+last_confidence_level_update = None
+
 try:
     while True:
         # Wait for the next set of frames from the camera
@@ -252,8 +256,11 @@ try:
             # Send MAVLINK VISION_POSITION_MESSAGE to FCU
             send_vision_position_message(H_aeroRef_aeroBody[0][3], H_aeroRef_aeroBody[1][3], H_aeroRef_aeroBody[2][3], rpy_rad[0], rpy_rad[1], rpy_rad[2])
 
-            print("INFO: Tracker confidence: ", pose_data_confidence_level[data.tracker_confidence])
-            send_confidence_level_dummy_message()
+            # Show new confidence level if it changes
+            if (last_confidence_level_update == None or data.tracker_confidence != last_confidence_level_update):
+                last_confidence_level_update = data.tracker_confidence
+                print("INFO: Tracker confidence: ", pose_data_confidence_level[data.tracker_confidence])
+                send_confidence_level_dummy_message()
 
             # We don't want to flood the FCU
             time.sleep(1.0/vision_msg_hz)
