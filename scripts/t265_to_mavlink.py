@@ -31,7 +31,7 @@ from pymavlink import mavutil
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 30
-confidence_msg_secs_default = 2
+confidence_msg_secs_default = 1
 
 # TODO: Explain this transformation by visualization
 # Transformation to convert different camera orientations to NED convention
@@ -67,11 +67,11 @@ pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
 parser = argparse.ArgumentParser(description='Reboots vehicle')
 parser.add_argument('--connect',
                     help="Vehicle connection target string. If not specified, a default string will be used.")
-parser.add_argument('--baudrate',
+parser.add_argument('--baudrate', type=float,
                     help="Vehicle connection baudrate. If not specified, a default value will be used.")
-parser.add_argument('--vision_msg_hz',
+parser.add_argument('--vision_msg_hz', type=float,
                     help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
-parser.add_argument('--confidence_msg_secs',
+parser.add_argument('--confidence_msg_secs', type=float,
                     help="Update frequency for confidence level. If not specified, a default value will be used.")
 
 args = parser.parse_args()
