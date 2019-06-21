@@ -3,9 +3,10 @@
 #####################################################
 # This script assumes pyrealsense2.[].so file is found under the same directory as this script
 # Install required packages: 
-#   pip install pyrealsense2
-#   pip install transformations
-#   pip install dronekit
+#   pip3 install pyrealsense2
+#   pip3 install transformations
+#   pip3 install dronekit
+#   pip3 install apscheduler
 
 # Set MAVLink protocol to 2.
 import os
@@ -17,6 +18,8 @@ import transformations as tf
 import math as m
 import time
 import argparse
+from apscheduler.schedulers.background import BackgroundScheduler
+
 from dronekit import connect, VehicleMode
 from pymavlink import mavutil
 
@@ -28,6 +31,7 @@ from pymavlink import mavutil
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 30
+confidence_msg_secs_default = 2
 
 # TODO: Explain this transformation by visualization
 # Transformation to convert different camera orientations to NED convention
@@ -67,12 +71,15 @@ parser.add_argument('--baudrate',
                     help="Vehicle connection baudrate. If not specified, a default value will be used.")
 parser.add_argument('--vision_msg_hz',
                     help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
+parser.add_argument('--confidence_msg_secs',
+                    help="Update frequency for confidence level. If not specified, a default value will be used.")
 
 args = parser.parse_args()
 
 connection_string = args.connect
 connection_baudrate = args.baudrate
 vision_msg_hz = args.vision_msg_hz
+confidence_msg_secs = args.confidence_msg_secs
 
 # Using default values if no specified inputs
 if not connection_string:
@@ -86,24 +93,44 @@ if not connection_baudrate:
 if not vision_msg_hz:
     vision_msg_hz = vision_msg_hz_default
     print("INFO: Using default vision_msg_hz", vision_msg_hz)
+    
+if not confidence_msg_secs:
+    confidence_msg_secs = confidence_msg_secs_default
+    print("INFO: Using default confidence_msg_secs", confidence_msg_secs)
 
 #######################################
 # Functions
 #######################################
 
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
-def send_vision_position_message(x,y,z,roll,pitch,yaw):
+def send_vision_position_message(timestamp_us, x, y, z, roll, pitch, yaw):
     msg = vehicle.message_factory.vision_position_estimate_encode(
-        current_time,	#us	Timestamp (UNIX time or time since system boot)
-        x,	            #Global X position
-        y,              #Global Y position
-        z,	            #Global Z position
-        roll,	        #Roll angle
-        pitch,	        #Pitch angle
-        yaw	            #Yaw angle
+        timestamp_us,       #us	Timestamp (UNIX time or time since system boot)
+        x,	                #Global X position
+        y,                  #Global Y position
+        z,	                #Global Z position
+        roll,	            #Roll angle
+        pitch,	            #Pitch angle
+        yaw	                #Yaw angle
     )
     vehicle.send_mavlink(msg)
     vehicle.flush()
+
+# Pack the confidence level into a message that is not being process and send to FCU, so we can view it on GCS
+# Confidence level value: 0 - 3, remapped to 0 - 100: 0% - Failed / 33.3% - Low / 66.6% - Medium / 100% - High 
+def send_confidence_level_dummy_message():
+    global data
+    if data != None:
+        print("INFO: Tracker confidence: ", pose_data_confidence_level[data.tracker_confidence])
+        msg = vehicle.message_factory.vision_position_delta_encode(
+            0,	            #us	Timestamp (UNIX time or time since system boot)
+            0,	            #Time since last reported camera frame
+            [0, 0, 0],      #angle_delta
+            [0, 0, 0],      #position_delta
+            float(data.tracker_confidence * 100 / 3)          
+        )
+        vehicle.send_mavlink(msg)
+        vehicle.flush()
 
 # Send a mavlink SET_GPS_GLOBAL_ORIGIN message (http://mavlink.org/messages/common#SET_GPS_GLOBAL_ORIGIN), which allows us to use local position information without a GPS.
 def set_default_global_origin():
@@ -153,20 +180,6 @@ def update_timesync(ts=0, tc=0):
         tc,     # tc1
         ts      # ts1
     )
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
-
-# Pack the confidence level into a message that is not being process and send to FCU, so we can view it on GCS
-def send_confidence_level_dummy_message():
-    msg = vehicle.message_factory.vision_position_delta_encode(
-        0,	            #us	Timestamp (UNIX time or time since system boot)
-        0,	            #Time since last reported camera frame
-        [0, 0, 0],      #angle_delta
-        [0, 0, 0],      #position_delta
-        float(data.tracker_confidence * 100 / 3)     # 0% - Failed / 33.3% - Low / 66.6% - Medium / 100% - High      
-    )
-    # NOTE: Sometimes sending the message once does not get through to Mission Planner
-    vehicle.send_mavlink(msg)
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
@@ -220,11 +233,17 @@ while (not vehicle_connect()):
     pass
 print("INFO: Vehicle connected")
 
-# Listen to the mavlink messages
+# Listen to the mavlink messages that will be used as trigger to set EKF home automatically
 vehicle.add_message_listener('STATUSTEXT', statustext_callback)
 
-print("INFO: Sending VISION_POSITION_ESTIMATE messages to FCU through MAVLink")
-last_confidence_level_update = None
+data = None
+
+# Update confidence level in the background
+update_confidence_level_scheduler = BackgroundScheduler()
+update_confidence_level_scheduler.add_job(send_confidence_level_dummy_message, 'interval', seconds = confidence_msg_secs)
+update_confidence_level_scheduler.start()
+
+print("INFO: Sending VISION_POSITION_ESTIMATE messages to FCU")
 
 try:
     while True:
@@ -248,22 +267,15 @@ try:
             H_T265Ref_T265body[2][3] = data.translation.z
 
             # Transform to aeronautic coordinates (body AND reference frame!)
-            H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody ))
+            H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
             
             # 'sxyz': Rz(yaw)*Ry(pitch)*Rx(roll) body w.r.t. reference frame
             rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
 
-            # Send MAVLINK VISION_POSITION_MESSAGE to FCU
-            send_vision_position_message(H_aeroRef_aeroBody[0][3], H_aeroRef_aeroBody[1][3], H_aeroRef_aeroBody[2][3], rpy_rad[0], rpy_rad[1], rpy_rad[2])
+            send_vision_position_message(current_time, H_aeroRef_aeroBody[0][3], H_aeroRef_aeroBody[1][3], H_aeroRef_aeroBody[2][3], rpy_rad[0], rpy_rad[1], rpy_rad[2])
 
-            # Show new confidence level if it changes
-            if (last_confidence_level_update == None or data.tracker_confidence != last_confidence_level_update):
-                last_confidence_level_update = data.tracker_confidence
-                print("INFO: Tracker confidence: ", pose_data_confidence_level[data.tracker_confidence])
-                send_confidence_level_dummy_message()
-
-            # We don't want to flood the FCU
-            time.sleep(1.0/vision_msg_hz)
+            # We don't want to flood the FCU with vision messages
+            time.sleep(1.0 / vision_msg_hz)
 
 except KeyboardInterrupt:
     print("INFO: KeyboardInterrupt has been caught. Cleaning up...")               
