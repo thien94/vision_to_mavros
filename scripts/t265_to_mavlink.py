@@ -31,7 +31,7 @@ from pymavlink import mavutil
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 30
-confidence_msg_secs_default = 1
+confidence_msg_hz_default = 5
 
 # TODO: Explain this transformation by visualization
 # Transformation to convert different camera orientations to NED convention
@@ -61,7 +61,7 @@ pipe = None
 pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
 
 #######################################
-# Connection configurations
+# Parsing user' inputs
 #######################################
 
 parser = argparse.ArgumentParser(description='Reboots vehicle')
@@ -71,7 +71,7 @@ parser.add_argument('--baudrate', type=float,
                     help="Vehicle connection baudrate. If not specified, a default value will be used.")
 parser.add_argument('--vision_msg_hz', type=float,
                     help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
-parser.add_argument('--confidence_msg_secs', type=float,
+parser.add_argument('--confidence_msg_hz', type=float,
                     help="Update frequency for confidence level. If not specified, a default value will be used.")
 
 args = parser.parse_args()
@@ -79,49 +79,64 @@ args = parser.parse_args()
 connection_string = args.connect
 connection_baudrate = args.baudrate
 vision_msg_hz = args.vision_msg_hz
-confidence_msg_secs = args.confidence_msg_secs
+confidence_msg_hz = args.confidence_msg_hz
 
 # Using default values if no specified inputs
 if not connection_string:
     connection_string = connection_string_default
     print("INFO: Using default connection_string", connection_string)
+else:
+    print("INFO: Using connection_string", connection_string)
 
 if not connection_baudrate:
     connection_baudrate = connection_baudrate_default
-    print("INFO: Using default connection_baudrate", connection_baudrate_default)
+    print("INFO: Using default connection_baudrate", connection_baudrate)
+else:
+    print("INFO: Using connection_baudrate", connection_baudrate)
 
 if not vision_msg_hz:
     vision_msg_hz = vision_msg_hz_default
     print("INFO: Using default vision_msg_hz", vision_msg_hz)
+else:
+    print("INFO: Using vision_msg_hz", vision_msg_hz)
     
-if not confidence_msg_secs:
-    confidence_msg_secs = confidence_msg_secs_default
-    print("INFO: Using default confidence_msg_secs", confidence_msg_secs)
+if not confidence_msg_hz:
+    confidence_msg_hz = confidence_msg_hz_default
+    print("INFO: Using default confidence_msg_hz", confidence_msg_hz)
+else:
+    print("INFO: Using confidence_msg_hz", confidence_msg_hz)
 
 #######################################
 # Functions
 #######################################
 
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
-def send_vision_position_message(timestamp_us, x, y, z, roll, pitch, yaw):
-    msg = vehicle.message_factory.vision_position_estimate_encode(
-        timestamp_us,       #us	Timestamp (UNIX time or time since system boot)
-        x,	                #Global X position
-        y,                  #Global Y position
-        z,	                #Global Z position
-        roll,	            #Roll angle
-        pitch,	            #Pitch angle
-        yaw	                #Yaw angle
-    )
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
+def send_vision_position_message():
+    global current_time, H_aeroRef_aeroBody
 
-# Pack the confidence level into a message that is not being process and send to FCU, so we can view it on GCS
+    if H_aeroRef_aeroBody is not None:
+        rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
+
+        msg = vehicle.message_factory.vision_position_estimate_encode(
+            current_time,       #us	Timestamp (UNIX time or time since system boot)
+            H_aeroRef_aeroBody[0][3],	                #Global X position
+            H_aeroRef_aeroBody[1][3],                  #Global Y position
+            H_aeroRef_aeroBody[2][3],	                #Global Z position
+            rpy_rad[0],	            #Roll angle
+            rpy_rad[1],	            #Pitch angle
+            rpy_rad[2]	                #Yaw angle
+        )
+
+        vehicle.send_mavlink(msg)
+        vehicle.flush()
+
+# For a lack of a dedicated message, we pack the confidence level into a message that will not be used, so we can view it on GCS
 # Confidence level value: 0 - 3, remapped to 0 - 100: 0% - Failed / 33.3% - Low / 66.6% - Medium / 100% - High 
 def send_confidence_level_dummy_message():
     global data
-    if data != None:
+    if data is not None:
         print("INFO: Tracker confidence: ", pose_data_confidence_level[data.tracker_confidence])
+
         msg = vehicle.message_factory.vision_position_delta_encode(
             0,	            #us	Timestamp (UNIX time or time since system boot)
             0,	            #Time since last reported camera frame
@@ -129,6 +144,7 @@ def send_confidence_level_dummy_message():
             [0, 0, 0],      #position_delta
             float(data.tracker_confidence * 100 / 3)          
         )
+
         vehicle.send_mavlink(msg)
         vehicle.flush()
 
@@ -140,6 +156,7 @@ def set_default_global_origin():
         home_lon,
         home_alt
     )
+
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
@@ -211,7 +228,7 @@ def realsense_connect():
     # Declare RealSense pipeline, encapsulating the actual device and sensors
     pipe = rs.pipeline()
 
-    # Build config object and request pose data
+    # Build config object before requesting data
     cfg = rs.config()
 
     # Enable the stream we are interested in
@@ -224,26 +241,30 @@ def realsense_connect():
 # Main code starts here
 #######################################
 
-print("INFO: Connecting to Realsense camera")
+print("INFO: Connecting to Realsense camera.")
 realsense_connect()
-print("INFO: Realsense connected")
+print("INFO: Realsense connected.")
 
-print("INFO: Connecting to vehicle")
+print("INFO: Connecting to vehicle.")
 while (not vehicle_connect()):
     pass
-print("INFO: Vehicle connected")
+print("INFO: Vehicle connected.")
 
 # Listen to the mavlink messages that will be used as trigger to set EKF home automatically
 vehicle.add_message_listener('STATUSTEXT', statustext_callback)
 
 data = None
+H_aeroRef_aeroBody = None
 
-# Update confidence level in the background
-update_confidence_level_scheduler = BackgroundScheduler()
-update_confidence_level_scheduler.add_job(send_confidence_level_dummy_message, 'interval', seconds = confidence_msg_secs)
-update_confidence_level_scheduler.start()
+# Send MAVlink messages in the background
+sched = BackgroundScheduler()
 
-print("INFO: Sending VISION_POSITION_ESTIMATE messages to FCU")
+sched.add_job(send_vision_position_message, 'interval', seconds = 1/vision_msg_hz)
+sched.add_job(send_confidence_level_dummy_message, 'interval', seconds = 1/confidence_msg_hz)
+
+sched.start()
+
+print("INFO: Sending VISION_POSITION_ESTIMATE messages to FCU.")
 
 try:
     while True:
@@ -268,21 +289,11 @@ try:
 
             # Transform to aeronautic coordinates (body AND reference frame!)
             H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
-            
-            # 'sxyz': Rz(yaw)*Ry(pitch)*Rx(roll) body w.r.t. reference frame
-            rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
-
-            send_vision_position_message(current_time, H_aeroRef_aeroBody[0][3], H_aeroRef_aeroBody[1][3], H_aeroRef_aeroBody[2][3], rpy_rad[0], rpy_rad[1], rpy_rad[2])
-
-            # We don't want to flood the FCU with vision messages
-            time.sleep(1.0 / vision_msg_hz)
 
 except KeyboardInterrupt:
     print("INFO: KeyboardInterrupt has been caught. Cleaning up...")               
 
 finally:
     pipe.stop()
-
-    #Close vehicle object before exiting script
-    print("INFO: Close vehicle object")
     vehicle.close()
+    print("INFO: Realsense pipeline and vehicle object closed.")
