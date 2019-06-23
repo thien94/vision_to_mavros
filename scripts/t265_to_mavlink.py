@@ -31,7 +31,7 @@ from pymavlink import mavutil
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 30
-confidence_msg_hz_default = 5
+confidence_msg_hz_default = 1
 
 # TODO: Explain this transformation by visualization
 # Transformation to convert different camera orientations to NED convention
