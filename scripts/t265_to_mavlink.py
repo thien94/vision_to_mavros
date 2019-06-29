@@ -1,16 +1,23 @@
+#!/usr/bin/env python3
+
 #####################################################
 ##          librealsense T265 to MAVLink           ##
 #####################################################
 # This script assumes pyrealsense2.[].so file is found under the same directory as this script
 # Install required packages: 
-#   pip3 install pyrealsense2
-#   pip3 install transformations
+#   pip install pyrealsense2
+#   pip install transformations
 #   pip3 install dronekit
 #   pip3 install apscheduler
+
+ # Set the path for IDLE
+import sys
+sys.path.append("/usr/local/lib/")
 
 # Set MAVLink protocol to 2.
 import os
 os.environ["MAVLINK20"] = "1"
+
 # Import the libraries
 import pyrealsense2 as rs
 import numpy as np
