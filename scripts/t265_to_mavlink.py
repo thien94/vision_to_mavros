@@ -39,6 +39,7 @@ connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 30
 confidence_msg_hz_default = 1
+compass_enabled = 1
 
 # TODO: Explain this transformation by visualization
 # Transformation to convert different camera orientations to NED convention
@@ -115,6 +116,11 @@ if not confidence_msg_hz:
 else:
     print("INFO: Using confidence_msg_hz", confidence_msg_hz)
 
+if compass_enabled == 1:
+    print("INFO: Using compass. Heading will be aligned to north.")
+else:
+    print("INFO: Not using compass.")
+    
 #######################################
 # Functions
 #######################################
@@ -219,6 +225,13 @@ def statustext_callback(self, attr_name, value):
         set_default_global_origin()
         set_default_home_position()
 
+# Listen to attitude data to acquire initial heading when compass is available
+def att_msg_callback(self, attr_name, value):
+    global heading_north_yaw
+    if heading_north_yaw is None:
+        heading_north_yaw = value.yaw
+        print("INFO: Received first ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
+
 def vehicle_connect():
     global vehicle
     
@@ -262,8 +275,13 @@ print("INFO: Vehicle connected.")
 # Listen to the mavlink messages that will be used as trigger to set EKF home automatically
 vehicle.add_message_listener('STATUSTEXT', statustext_callback)
 
+if compass_enabled == 1:
+    # Listen to the attitude data in aeronautical frame
+    vehicle.add_message_listener('ATTITUDE', att_msg_callback)
+
 data = None
 H_aeroRef_aeroBody = None
+heading_north_yaw = None
 
 # Send MAVlink messages in the background
 sched = BackgroundScheduler()
@@ -298,6 +316,10 @@ try:
 
             # Transform to aeronautic coordinates (body AND reference frame!)
             H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
+
+            if compass_enabled == 1:
+                # Realign heading to face north using initial compass data
+                H_aeroRef_aeroBody = H_aeroRef_aeroBody.dot( tf.euler_matrix(0, 0, heading_north_yaw, 'sxyz'))
 
 except KeyboardInterrupt:
     print("INFO: KeyboardInterrupt has been caught. Cleaning up...")               
