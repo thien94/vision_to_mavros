@@ -294,6 +294,10 @@ sched.add_job(send_confidence_level_dummy_message, 'interval', seconds = 1/confi
 
 sched.start()
 
+if compass_enabled == 1:
+    # Wait a short while for yaw to be correctly initiated
+    time.sleep(1)
+
 print("INFO: Sending VISION_POSITION_ESTIMATE messages to FCU.")
 
 try:
