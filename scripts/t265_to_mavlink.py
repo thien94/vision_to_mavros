@@ -231,6 +231,9 @@ def att_msg_callback(self, attr_name, value):
     if heading_north_yaw is None:
         heading_north_yaw = value.yaw
         print("INFO: Received first ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
+    else:
+        heading_north_yaw = value.yaw
+        print("INFO: Received ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
 
 def vehicle_connect():
     global vehicle
