@@ -39,7 +39,15 @@ connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 30
 confidence_msg_hz_default = 1
-compass_enabled = 1
+
+# Enable using yaw from compass to align north (zero degree is facing north)
+compass_enabled = 0
+
+# In NED frame, offset from the IMU or the center of gravity to the camera's origin point
+body_offset_enabled = 1
+body_offset_x = 0
+body_offset_y = 0
+body_offset_z = 0
 
 # TODO: Explain this transformation by visualization
 # Transformation to convert different camera orientations to NED convention
@@ -121,6 +129,7 @@ if compass_enabled == 1:
 else:
     print("INFO: Not using compass.")
     
+
 #######################################
 # Functions
 #######################################
@@ -217,9 +226,8 @@ def update_timesync(ts=0, tc=0):
 
 # Listen to "GPS Glitch" and "GPS Glitch cleared" message, then set EKF home automatically.
 def statustext_callback(self, attr_name, value):
-    # print("INFO: Received STATUSTEXT message")
-    # print(value.text)
-    if value.text == "GPS Glitch" or value.text == "GPS Glitch cleared":
+    # These are the status texts that indicates EKF is ready to receive home position
+    if value.text == "GPS Glitch" or value.text == "GPS Glitch cleared" or value.text == "EKF2 IMU0 ext nav yaw alignment complete":
         time.sleep(0.1)
         print("INFO: Set EKF home with default GPS location")
         set_default_global_origin()
@@ -324,8 +332,17 @@ try:
             # Transform to aeronautic coordinates (body AND reference frame!)
             H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
 
+            # Take offsets from body's center of gravity (or IMU) to camera's origin into account
+            if body_offset_enabled == 1:
+                H_body_camera = tf.euler_matrix(0, 0, 0, 'sxyz')
+                H_body_camera[0][3] = body_offset_x
+                H_body_camera[1][3] = body_offset_y
+                H_body_camera[2][3] = body_offset_z
+                H_camera_body = np.linalg.inv(H_body_camera)
+                H_aeroRef_aeroBody = H_body_camera.dot(H_aeroRef_aeroBody.dot(H_camera_body))
+
+            # Realign heading to face north using initial compass data
             if compass_enabled == 1:
-                # Realign heading to face north using initial compass data
                 H_aeroRef_aeroBody = H_aeroRef_aeroBody.dot( tf.euler_matrix(0, 0, heading_north_yaw, 'sxyz'))
 
 except KeyboardInterrupt:
