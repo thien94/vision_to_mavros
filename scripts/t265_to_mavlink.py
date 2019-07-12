@@ -42,11 +42,11 @@ confidence_msg_hz_default = 1
 
 # In NED frame, offset from the IMU or the center of gravity to the camera's origin point
 body_offset_enabled = 0
-body_offset_x = 0.05    # In meters, so 0.05 = 5cm
-body_offset_y = 0       # In meters
-body_offset_z = 0       # In meters
+body_offset_x = 0.05    # In meters (m), so 0.05 = 5cm
+body_offset_y = 0       # In meters (m)
+body_offset_z = 0       # In meters (m)
 
-# Global scale factor, position x y z will be scaled up by this
+# Global scale factor, position x y z will be scaled up/down by this factor
 scale_factor = 1
 
 # Enable using yaw from compass to align north (zero degree is facing north)
@@ -93,6 +93,8 @@ parser.add_argument('--vision_msg_hz', type=float,
                     help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
 parser.add_argument('--confidence_msg_hz', type=float,
                     help="Update frequency for confidence level. If not specified, a default value will be used.")
+parser.add_argument('--scale_calib_enable', type=bool,
+                    help="Scale calibration. Only run while NOT in flight")
 
 args = parser.parse_args()
 
@@ -100,6 +102,7 @@ connection_string = args.connect
 connection_baudrate = args.baudrate
 vision_msg_hz = args.vision_msg_hz
 confidence_msg_hz = args.confidence_msg_hz
+scale_calib_enable = args.scale_calib_enable
 
 # Using default values if no specified inputs
 if not connection_string:
@@ -126,11 +129,6 @@ if not confidence_msg_hz:
 else:
     print("INFO: Using confidence_msg_hz", confidence_msg_hz)
 
-if scale_factor == 1:
-    print("INFO: Using default scale factor", scale_factor)
-else:
-    print("INFO: Using scale factor", scale_factor)
-
 if body_offset_enabled == 1:
     print("INFO: Using camera position offset: Enabled, x y z is", body_offset_x, body_offset_y, body_offset_z)
 else:
@@ -140,6 +138,14 @@ if compass_enabled == 1:
     print("INFO: Using compass: Enabled. Heading will be aligned to north.")
 else:
     print("INFO: Using compass: Disabled")
+
+if scale_calib_enable == True:
+    print("\nINFO: SCALE CALIBRATION PROCESS. DO NOT RUN DURING FLIGHT.\n")
+else:
+    if scale_factor == 1:
+        print("INFO: Using default scale factor", scale_factor)
+    else:
+        print("INFO: Using scale factor", scale_factor)
 
 #######################################
 # Functions
