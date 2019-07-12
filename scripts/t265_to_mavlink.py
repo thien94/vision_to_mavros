@@ -40,14 +40,14 @@ connection_baudrate_default = 921600
 vision_msg_hz_default = 30
 confidence_msg_hz_default = 1
 
+# In NED frame, offset from the IMU or the center of gravity to the camera's origin point
+body_offset_enabled = 0
+body_offset_x = 0.05    # In meters, so 0.05 = 5cm
+body_offset_y = 0       # In meters
+body_offset_z = 0       # In meters
+
 # Enable using yaw from compass to align north (zero degree is facing north)
 compass_enabled = 0
-
-# In NED frame, offset from the IMU or the center of gravity to the camera's origin point
-body_offset_enabled = 1
-body_offset_x = 0
-body_offset_y = 0
-body_offset_z = 0
 
 # TODO: Explain this transformation by visualization
 # Transformation to convert different camera orientations to NED convention
