@@ -40,7 +40,15 @@ connection_baudrate_default = 921600
 vision_msg_hz_default = 30
 confidence_msg_hz_default = 1
 
-# TODO: Explain this transformation by visualization
+# In NED frame, offset from the IMU or the center of gravity to the camera's origin point
+body_offset_enabled = 0
+body_offset_x = 0.05    # In meters, so 0.05 = 5cm
+body_offset_y = 0       # In meters
+body_offset_z = 0       # In meters
+
+# Enable using yaw from compass to align north (zero degree is facing north)
+compass_enabled = 0
+
 # Transformation to convert different camera orientations to NED convention
 # Frontfacing:
 #     Forward, USB port to the right (default): 
@@ -115,6 +123,16 @@ if not confidence_msg_hz:
 else:
     print("INFO: Using confidence_msg_hz", confidence_msg_hz)
 
+if body_offset_enabled == 1:
+    print("INFO: Using camera position offset: Enabled, x y z is", body_offset_x, body_offset_y, body_offset_z)
+else:
+    print("INFO: Using camera position offset: Disabled")
+
+if compass_enabled == 1:
+    print("INFO: Using compass: Enabled. Heading will be aligned to north.")
+else:
+    print("INFO: Using compass: Disabled")
+
 #######################################
 # Functions
 #######################################
@@ -127,13 +145,13 @@ def send_vision_position_message():
         rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
 
         msg = vehicle.message_factory.vision_position_estimate_encode(
-            current_time,       #us	Timestamp (UNIX time or time since system boot)
-            H_aeroRef_aeroBody[0][3],	                #Global X position
-            H_aeroRef_aeroBody[1][3],                  #Global Y position
-            H_aeroRef_aeroBody[2][3],	                #Global Z position
-            rpy_rad[0],	            #Roll angle
-            rpy_rad[1],	            #Pitch angle
-            rpy_rad[2]	                #Yaw angle
+            current_time,                       # us Timestamp (UNIX time or time since system boot)
+            H_aeroRef_aeroBody[0][3],	        # Global X position
+            H_aeroRef_aeroBody[1][3],           # Global Y position
+            H_aeroRef_aeroBody[2][3],	        # Global Z position
+            rpy_rad[0],	                        # Roll angle
+            rpy_rad[1],	                        # Pitch angle
+            rpy_rad[2]	                        # Yaw angle
         )
 
         vehicle.send_mavlink(msg)
@@ -209,15 +227,24 @@ def update_timesync(ts=0, tc=0):
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
-# Listen to "GPS Glitch" and "GPS Glitch cleared" message, then set EKF home automatically.
+# Listen to messages that indicate EKF is ready to set home, then set EKF home automatically.
 def statustext_callback(self, attr_name, value):
-    # print("INFO: Received STATUSTEXT message")
-    # print(value.text)
-    if value.text == "GPS Glitch" or value.text == "GPS Glitch cleared":
+    # These are the status texts that indicates EKF is ready to receive home position
+    if value.text == "GPS Glitch" or value.text == "GPS Glitch cleared" or value.text == "EKF2 IMU1 ext nav yaw alignment complete":
         time.sleep(0.1)
         print("INFO: Set EKF home with default GPS location")
         set_default_global_origin()
         set_default_home_position()
+
+# Listen to attitude data to acquire heading when compass data is enabled
+def att_msg_callback(self, attr_name, value):
+    global heading_north_yaw
+    if heading_north_yaw is None:
+        heading_north_yaw = value.yaw
+        print("INFO: Received first ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
+    else:
+        heading_north_yaw = value.yaw
+        print("INFO: Received ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
 
 def vehicle_connect():
     global vehicle
@@ -262,8 +289,13 @@ print("INFO: Vehicle connected.")
 # Listen to the mavlink messages that will be used as trigger to set EKF home automatically
 vehicle.add_message_listener('STATUSTEXT', statustext_callback)
 
+if compass_enabled == 1:
+    # Listen to the attitude data in aeronautical frame
+    vehicle.add_message_listener('ATTITUDE', att_msg_callback)
+
 data = None
 H_aeroRef_aeroBody = None
+heading_north_yaw = None
 
 # Send MAVlink messages in the background
 sched = BackgroundScheduler()
@@ -272,6 +304,10 @@ sched.add_job(send_vision_position_message, 'interval', seconds = 1/vision_msg_h
 sched.add_job(send_confidence_level_dummy_message, 'interval', seconds = 1/confidence_msg_hz)
 
 sched.start()
+
+if compass_enabled == 1:
+    # Wait a short while for yaw to be correctly initiated
+    time.sleep(1)
 
 print("INFO: Sending VISION_POSITION_ESTIMATE messages to FCU.")
 
@@ -298,6 +334,19 @@ try:
 
             # Transform to aeronautic coordinates (body AND reference frame!)
             H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
+
+            # Take offsets from body's center of gravity (or IMU) to camera's origin into account
+            if body_offset_enabled == 1:
+                H_body_camera = tf.euler_matrix(0, 0, 0, 'sxyz')
+                H_body_camera[0][3] = body_offset_x
+                H_body_camera[1][3] = body_offset_y
+                H_body_camera[2][3] = body_offset_z
+                H_camera_body = np.linalg.inv(H_body_camera)
+                H_aeroRef_aeroBody = H_body_camera.dot(H_aeroRef_aeroBody.dot(H_camera_body))
+
+            # Realign heading to face north using initial compass data
+            if compass_enabled == 1:
+                H_aeroRef_aeroBody = H_aeroRef_aeroBody.dot( tf.euler_matrix(0, 0, heading_north_yaw, 'sxyz'))
 
 except KeyboardInterrupt:
     print("INFO: KeyboardInterrupt has been caught. Cleaning up...")               
