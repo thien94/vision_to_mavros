@@ -46,6 +46,9 @@ body_offset_x = 0.05    # In meters, so 0.05 = 5cm
 body_offset_y = 0       # In meters
 body_offset_z = 0       # In meters
 
+# Global scale factor, position x y z will be scaled up by this
+scale_factor = 1
+
 # Enable using yaw from compass to align north (zero degree is facing north)
 compass_enabled = 0
 
@@ -122,6 +125,11 @@ if not confidence_msg_hz:
     print("INFO: Using default confidence_msg_hz", confidence_msg_hz)
 else:
     print("INFO: Using confidence_msg_hz", confidence_msg_hz)
+
+if scale_factor == 1:
+    print("INFO: Using default scale factor", scale_factor)
+else:
+    print("INFO: Using scale factor", scale_factor)
 
 if body_offset_enabled == 1:
     print("INFO: Using camera position offset: Enabled, x y z is", body_offset_x, body_offset_y, body_offset_z)
@@ -328,9 +336,9 @@ try:
             
             # In transformations, Quaternions w+ix+jy+kz are represented as [w, x, y, z]!
             H_T265Ref_T265body = tf.quaternion_matrix([data.rotation.w, data.rotation.x, data.rotation.y, data.rotation.z]) 
-            H_T265Ref_T265body[0][3] = data.translation.x
-            H_T265Ref_T265body[1][3] = data.translation.y
-            H_T265Ref_T265body[2][3] = data.translation.z
+            H_T265Ref_T265body[0][3] = data.translation.x * scale_factor
+            H_T265Ref_T265body[1][3] = data.translation.y * scale_factor
+            H_T265Ref_T265body[2][3] = data.translation.z * scale_factor
 
             # Transform to aeronautic coordinates (body AND reference frame!)
             H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
