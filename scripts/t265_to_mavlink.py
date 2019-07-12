@@ -49,7 +49,6 @@ body_offset_z = 0       # In meters
 # Enable using yaw from compass to align north (zero degree is facing north)
 compass_enabled = 0
 
-# TODO: Explain this transformation by visualization
 # Transformation to convert different camera orientations to NED convention
 # Frontfacing:
 #     Forward, USB port to the right (default): 
@@ -146,13 +145,13 @@ def send_vision_position_message():
         rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
 
         msg = vehicle.message_factory.vision_position_estimate_encode(
-            current_time,       #us	Timestamp (UNIX time or time since system boot)
-            H_aeroRef_aeroBody[0][3],	                #Global X position
-            H_aeroRef_aeroBody[1][3],                  #Global Y position
-            H_aeroRef_aeroBody[2][3],	                #Global Z position
-            rpy_rad[0],	            #Roll angle
-            rpy_rad[1],	            #Pitch angle
-            rpy_rad[2]	                #Yaw angle
+            current_time,                       # us Timestamp (UNIX time or time since system boot)
+            H_aeroRef_aeroBody[0][3],	        # Global X position
+            H_aeroRef_aeroBody[1][3],           # Global Y position
+            H_aeroRef_aeroBody[2][3],	        # Global Z position
+            rpy_rad[0],	                        # Roll angle
+            rpy_rad[1],	                        # Pitch angle
+            rpy_rad[2]	                        # Yaw angle
         )
 
         vehicle.send_mavlink(msg)
@@ -228,7 +227,7 @@ def update_timesync(ts=0, tc=0):
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
-# Listen to "GPS Glitch" and "GPS Glitch cleared" message, then set EKF home automatically.
+# Listen to messages that indicate EKF is ready to set home, then set EKF home automatically.
 def statustext_callback(self, attr_name, value):
     # These are the status texts that indicates EKF is ready to receive home position
     if value.text == "GPS Glitch" or value.text == "GPS Glitch cleared" or value.text == "EKF2 IMU1 ext nav yaw alignment complete":
@@ -237,7 +236,7 @@ def statustext_callback(self, attr_name, value):
         set_default_global_origin()
         set_default_home_position()
 
-# Listen to attitude data to acquire initial heading when compass is available
+# Listen to attitude data to acquire heading when compass data is enabled
 def att_msg_callback(self, attr_name, value):
     global heading_north_yaw
     if heading_north_yaw is None:
