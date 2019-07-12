@@ -124,11 +124,15 @@ if not confidence_msg_hz:
 else:
     print("INFO: Using confidence_msg_hz", confidence_msg_hz)
 
-if compass_enabled == 1:
-    print("INFO: Using compass. Heading will be aligned to north.")
+if body_offset_enabled == 1:
+    print("INFO: Using camera position offset: Enabled, x y z is", body_offset_x, body_offset_y, body_offset_z)
 else:
-    print("INFO: Not using compass.")
-    
+    print("INFO: Using camera position offset: Disabled")
+
+if compass_enabled == 1:
+    print("INFO: Using compass: Enabled. Heading will be aligned to north.")
+else:
+    print("INFO: Using compass: Disabled")
 
 #######################################
 # Functions
@@ -227,7 +231,7 @@ def update_timesync(ts=0, tc=0):
 # Listen to "GPS Glitch" and "GPS Glitch cleared" message, then set EKF home automatically.
 def statustext_callback(self, attr_name, value):
     # These are the status texts that indicates EKF is ready to receive home position
-    if value.text == "GPS Glitch" or value.text == "GPS Glitch cleared" or value.text == "EKF2 IMU0 ext nav yaw alignment complete":
+    if value.text == "GPS Glitch" or value.text == "GPS Glitch cleared" or value.text == "EKF2 IMU1 ext nav yaw alignment complete":
         time.sleep(0.1)
         print("INFO: Set EKF home with default GPS location")
         set_default_global_origin()
