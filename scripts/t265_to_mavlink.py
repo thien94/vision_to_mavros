@@ -25,6 +25,7 @@ import transformations as tf
 import math as m
 import time
 import argparse
+import threading
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from dronekit import connect, VehicleMode
@@ -47,7 +48,7 @@ body_offset_y = 0       # In meters (m)
 body_offset_z = 0       # In meters (m)
 
 # Global scale factor, position x y z will be scaled up/down by this factor
-scale_factor = 1
+scale_factor = 1.0
 
 # Enable using yaw from compass to align north (zero degree is facing north)
 compass_enabled = 0
@@ -140,9 +141,9 @@ else:
     print("INFO: Using compass: Disabled")
 
 if scale_calib_enable == True:
-    print("\nINFO: SCALE CALIBRATION PROCESS. DO NOT RUN DURING FLIGHT.\n")
+    print("\nINFO: SCALE CALIBRATION PROCESS. DO NOT RUN DURING FLIGHT.\nINFO: TYPE IN NEW SCALE IN FLOATING POINT FORMAT\n")
 else:
-    if scale_factor == 1:
+    if scale_factor == 1.0:
         print("INFO: Using default scale factor", scale_factor)
     else:
         print("INFO: Using scale factor", scale_factor)
@@ -287,6 +288,13 @@ def realsense_connect():
     # Start streaming with requested config
     pipe.start(cfg)
 
+# Monitor user input from the terminal and update scale factor accordingly
+def scale_update():
+    global scale_factor
+    while True:
+        scale_factor = float(input("INFO: Type in new scale as float number\n"))
+        print("INFO: New scale is ", scale_factor)  
+
 #######################################
 # Main code starts here
 #######################################
@@ -316,6 +324,12 @@ sched = BackgroundScheduler()
 
 sched.add_job(send_vision_position_message, 'interval', seconds = 1/vision_msg_hz)
 sched.add_job(send_confidence_level_dummy_message, 'interval', seconds = 1/confidence_msg_hz)
+
+# For scale calibration, we will use a thread to monitor user input
+if scale_calib_enable == True:
+    scale_update_thread = threading.Thread(target=scale_update)
+    scale_update_thread.daemon = True
+    scale_update_thread.start()
 
 sched.start()
 
@@ -369,3 +383,4 @@ finally:
     pipe.stop()
     vehicle.close()
     print("INFO: Realsense pipeline and vehicle object closed.")
+    sys.exit()
