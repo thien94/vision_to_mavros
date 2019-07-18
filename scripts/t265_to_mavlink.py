@@ -25,6 +25,7 @@ import transformations as tf
 import math as m
 import time
 import argparse
+import threading
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from dronekit import connect, VehicleMode
@@ -42,9 +43,12 @@ confidence_msg_hz_default = 1
 
 # In NED frame, offset from the IMU or the center of gravity to the camera's origin point
 body_offset_enabled = 0
-body_offset_x = 0.05    # In meters, so 0.05 = 5cm
-body_offset_y = 0       # In meters
-body_offset_z = 0       # In meters
+body_offset_x = 0.05    # In meters (m), so 0.05 = 5cm
+body_offset_y = 0       # In meters (m)
+body_offset_z = 0       # In meters (m)
+
+# Global scale factor, position x y z will be scaled up/down by this factor
+scale_factor = 1.0
 
 # Enable using yaw from compass to align north (zero degree is facing north)
 compass_enabled = 0
@@ -90,6 +94,8 @@ parser.add_argument('--vision_msg_hz', type=float,
                     help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
 parser.add_argument('--confidence_msg_hz', type=float,
                     help="Update frequency for confidence level. If not specified, a default value will be used.")
+parser.add_argument('--scale_calib_enable', type=bool,
+                    help="Scale calibration. Only run while NOT in flight")
 
 args = parser.parse_args()
 
@@ -97,6 +103,7 @@ connection_string = args.connect
 connection_baudrate = args.baudrate
 vision_msg_hz = args.vision_msg_hz
 confidence_msg_hz = args.confidence_msg_hz
+scale_calib_enable = args.scale_calib_enable
 
 # Using default values if no specified inputs
 if not connection_string:
@@ -132,6 +139,14 @@ if compass_enabled == 1:
     print("INFO: Using compass: Enabled. Heading will be aligned to north.")
 else:
     print("INFO: Using compass: Disabled")
+
+if scale_calib_enable == True:
+    print("\nINFO: SCALE CALIBRATION PROCESS. DO NOT RUN DURING FLIGHT.\nINFO: TYPE IN NEW SCALE IN FLOATING POINT FORMAT\n")
+else:
+    if scale_factor == 1.0:
+        print("INFO: Using default scale factor", scale_factor)
+    else:
+        print("INFO: Using scale factor", scale_factor)
 
 #######################################
 # Functions
@@ -273,6 +288,13 @@ def realsense_connect():
     # Start streaming with requested config
     pipe.start(cfg)
 
+# Monitor user input from the terminal and update scale factor accordingly
+def scale_update():
+    global scale_factor
+    while True:
+        scale_factor = float(input("INFO: Type in new scale as float number\n"))
+        print("INFO: New scale is ", scale_factor)  
+
 #######################################
 # Main code starts here
 #######################################
@@ -303,6 +325,12 @@ sched = BackgroundScheduler()
 sched.add_job(send_vision_position_message, 'interval', seconds = 1/vision_msg_hz)
 sched.add_job(send_confidence_level_dummy_message, 'interval', seconds = 1/confidence_msg_hz)
 
+# For scale calibration, we will use a thread to monitor user input
+if scale_calib_enable == True:
+    scale_update_thread = threading.Thread(target=scale_update)
+    scale_update_thread.daemon = True
+    scale_update_thread.start()
+
 sched.start()
 
 if compass_enabled == 1:
@@ -328,9 +356,9 @@ try:
             
             # In transformations, Quaternions w+ix+jy+kz are represented as [w, x, y, z]!
             H_T265Ref_T265body = tf.quaternion_matrix([data.rotation.w, data.rotation.x, data.rotation.y, data.rotation.z]) 
-            H_T265Ref_T265body[0][3] = data.translation.x
-            H_T265Ref_T265body[1][3] = data.translation.y
-            H_T265Ref_T265body[2][3] = data.translation.z
+            H_T265Ref_T265body[0][3] = data.translation.x * scale_factor
+            H_T265Ref_T265body[1][3] = data.translation.y * scale_factor
+            H_T265Ref_T265body[2][3] = data.translation.z * scale_factor
 
             # Transform to aeronautic coordinates (body AND reference frame!)
             H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
@@ -355,3 +383,4 @@ finally:
     pipe.stop()
     vehicle.close()
     print("INFO: Realsense pipeline and vehicle object closed.")
+    sys.exit()
