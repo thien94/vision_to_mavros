@@ -28,7 +28,7 @@ int main(int argc, char** argv){
 
   std::string source_frame_id = "/camera_link";
 
-  double output_rate = 30, roll_cam = 0, pitch_cam = 0, yaw_cam = 1.5707963, gamma_world = -1.5707963;
+  double output_rate = 30, roll_cam = 0, pitch_cam = 0, yaw_cam = 1.5707963, gamma_world = -1.5707963, scale_factor = 1.0;
 
   // Read parameters from launch file, including: target_frame_id, source_frame_id, output_rate
   {
@@ -102,6 +102,16 @@ int main(int argc, char** argv){
     {
       ROS_WARN("Using default yaw_cam: %f", yaw_cam);
     }
+
+    // The scale factor that will be applied to position
+    if(node.getParam("scale_factor", scale_factor))
+    {
+      ROS_INFO("Get scale_factor parameter: %f", scale_factor);
+    }
+    else
+    {
+      ROS_WARN("Using default scale_factor: %f", scale_factor);
+    }
   }
 
   // Wait for the first transform to become available. 
@@ -136,9 +146,11 @@ int main(int argc, char** argv){
         // See the full rotation matrix at https://en.wikipedia.org/wiki/Rotation_matrix#Basic_rotations
         position_orig = transform.getOrigin();
 
-        position_body.setX( cos(gamma_world) * position_orig.getX() + sin(gamma_world) * position_orig.getY());
-        position_body.setY(-sin(gamma_world) * position_orig.getX() + cos(gamma_world) * position_orig.getY());
-        position_body.setZ(position_orig.getZ());
+        node.getParam("scale_factor", scale_factor);
+
+        position_body.setX(( cos(gamma_world) * position_orig.getX() + sin(gamma_world) * position_orig.getY()) * scale_factor);
+        position_body.setY((-sin(gamma_world) * position_orig.getX() + cos(gamma_world) * position_orig.getY()) * scale_factor);
+        position_body.setZ((position_orig.getZ()) * scale_factor);
 
         // 2) Rotation from camera to body frame.
         quat_cam = transform.getRotation();

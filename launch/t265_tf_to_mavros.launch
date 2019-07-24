@@ -22,6 +22,9 @@
     <param name="pitch_cam"         value="0" />
     <param name="yaw_cam"           value="0" />
     <param name="gamma_world"       value="-1.5707963" />
+    <rosparam>
+        scale_factor: 1.0
+    </rosparam>
 
     <node pkg="vision_to_mavros" type="vision_to_mavros_node" name="t265_to_mavros" output="screen" >
         <remap from="vision_pose" to="/mavros/vision_pose/pose" />
