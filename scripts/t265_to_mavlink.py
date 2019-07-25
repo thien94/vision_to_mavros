@@ -59,10 +59,9 @@ compass_enabled = 0
 #           H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
 #           H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 #     Forward, USB port to the left: 
-# Downfacing (you need to tilt the vehicle's nose up a little (not flat) when launch the T265 realsense-ros node, otherwise the initial yaw will be randomized, read here: https://github.com/IntelRealSense/librealsense/issues/4080
-# Tilt the vehicle to any other sides and the yaw might not be as stable):
+# Downfacing (you need to tilt the vehicle's nose up a little - not flat - before you run the script, otherwise the initial yaw will be randomized, read here for more details: https://github.com/IntelRealSense/librealsense/issues/4080. Tilt the vehicle to any other sides and the yaw might not be as stable):
 #     Downfacing, USB port to the right : 
-#           H_aeroRef_T265Ref = np.array([[0,1, 0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]]), 
+#           H_aeroRef_T265Ref = np.array([[0,1, 0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
 #           H_T265body_aeroBody = np.linalg.inv(np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]]))
 #     Downfacing, USB port to the left  : 
 #     Downfacing, USB port to the back  :         
