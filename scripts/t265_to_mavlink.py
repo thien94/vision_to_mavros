@@ -175,10 +175,12 @@ def send_vision_position_message():
 # For a lack of a dedicated message, we pack the confidence level into a message that will not be used, so we can view it on GCS
 # Confidence level value: 0 - 3, remapped to 0 - 100: 0% - Failed / 33.3% - Low / 66.6% - Medium / 100% - High 
 def send_confidence_level_dummy_message():
-    global data
+    global data, current_confidence
     if data is not None:
+        # Show confidence level on terminal
         print("INFO: Tracker confidence: ", pose_data_confidence_level[data.tracker_confidence])
 
+        # Send MAVLink message to show confidence level numerically
         msg = vehicle.message_factory.vision_position_delta_encode(
             0,	            #us	Timestamp (UNIX time or time since system boot)
             0,	            #Time since last reported camera frame
@@ -186,9 +188,20 @@ def send_confidence_level_dummy_message():
             [0, 0, 0],      #position_delta
             float(data.tracker_confidence * 100 / 3)          
         )
-
         vehicle.send_mavlink(msg)
         vehicle.flush()
+
+        # If confidence level changes, send MAVLink message to show confidence level textually and phonetically
+        if current_confidence is None or current_confidence != data.tracker_confidence:
+            current_confidence = data.tracker_confidence
+            confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
+            status_msg = vehicle.message_factory.statustext_encode(
+                3,	            #severity, defined here: https://mavlink.io/en/messages/common.html#MAV_SEVERITY, 3 will let the message be displayed on Mission Planner HUD
+                confidence_status_string.encode()	  #text	char[50]       
+            )
+            vehicle.send_mavlink(status_msg)
+            vehicle.flush()
+
 
 # Send a mavlink SET_GPS_GLOBAL_ORIGIN message (http://mavlink.org/messages/common#SET_GPS_GLOBAL_ORIGIN), which allows us to use local position information without a GPS.
 def set_default_global_origin():
@@ -265,7 +278,7 @@ def vehicle_connect():
     global vehicle
     
     try:
-        vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate)
+        vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
     except:
         print('Connection error! Retrying...')
 
@@ -316,6 +329,7 @@ if compass_enabled == 1:
     vehicle.add_message_listener('ATTITUDE', att_msg_callback)
 
 data = None
+current_confidence = None
 H_aeroRef_aeroBody = None
 heading_north_yaw = None
 
