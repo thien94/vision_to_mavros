@@ -177,7 +177,7 @@ def send_confidence_level_dummy_message():
     global data, current_confidence
     if data is not None:
         # Show confidence level on terminal
-        print("INFO: Tracker confidence: ", pose_data_confidence_level[data.tracker_confidence])
+        print("INFO: Tracking confidence: ", pose_data_confidence_level[data.tracker_confidence])
 
         # Send MAVLink message to show confidence level numerically
         msg = vehicle.message_factory.vision_position_delta_encode(
