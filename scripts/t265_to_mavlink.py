@@ -53,7 +53,7 @@ scale_factor = 1.0
 # Enable using yaw from compass to align north (zero degree is facing north)
 compass_enabled = 0
 
-# Transformation to convert different camera orientations to NED convention
+# Transformation to convert different camera orientations to NED convention. Replace H_aeroRef_T265Ref and H_T265body_aeroBody according to your configuration.
 # Frontfacing:
 #     Forward, USB port to the right (default): 
 #           H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
@@ -61,11 +61,12 @@ compass_enabled = 0
 #     Forward, USB port to the left: 
 # Downfacing (you need to tilt the vehicle's nose up a little - not flat - before you run the script, otherwise the initial yaw will be randomized, read here for more details: https://github.com/IntelRealSense/librealsense/issues/4080. Tilt the vehicle to any other sides and the yaw might not be as stable):
 #     Downfacing, USB port to the right : 
-#           H_aeroRef_T265Ref = np.array([[0,1, 0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
-#           H_T265body_aeroBody = np.linalg.inv(np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]]))
+#           H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
+#           H_T265body_aeroBody = np.array([[0,1,0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
 #     Downfacing, USB port to the left  : 
 #     Downfacing, USB port to the back  :         
 #     Downfacing, USB port to the front : 
+
 H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
 H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 
@@ -366,7 +367,7 @@ try:
 
             # Pose data consists of translation and rotation
             data = pose.get_pose_data()
-            
+
             # In transformations, Quaternions w+ix+jy+kz are represented as [w, x, y, z]!
             H_T265Ref_T265body = tf.quaternion_matrix([data.rotation.w, data.rotation.x, data.rotation.y, data.rotation.z]) 
             H_T265Ref_T265body[0][3] = data.translation.x * scale_factor
