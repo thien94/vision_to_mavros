@@ -40,6 +40,7 @@ connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 30
 confidence_msg_hz_default = 1
+camera_orientation_default = 0
 
 # In NED frame, offset from the IMU or the center of gravity to the camera's origin point
 body_offset_enabled = 0
@@ -52,23 +53,6 @@ scale_factor = 1.0
 
 # Enable using yaw from compass to align north (zero degree is facing north)
 compass_enabled = 0
-
-# Transformation to convert different camera orientations to NED convention. Replace H_aeroRef_T265Ref and H_T265body_aeroBody according to your configuration.
-# Frontfacing:
-#     Forward, USB port to the right (default): 
-#           H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-#           H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
-#     Forward, USB port to the left: 
-# Downfacing (you need to tilt the vehicle's nose up a little - not flat - before you run the script, otherwise the initial yaw will be randomized, read here for more details: https://github.com/IntelRealSense/librealsense/issues/4080. Tilt the vehicle to any other sides and the yaw might not be as stable):
-#     Downfacing, USB port to the right : 
-#           H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-#           H_T265body_aeroBody = np.array([[0,1,0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
-#     Downfacing, USB port to the left  : 
-#     Downfacing, USB port to the back  :         
-#     Downfacing, USB port to the front : 
-
-H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 
 # Default global position of home/ origin
 home_lat = 151269321       # Somewhere in Africa
@@ -96,6 +80,8 @@ parser.add_argument('--confidence_msg_hz', type=float,
                     help="Update frequency for confidence level. If not specified, a default value will be used.")
 parser.add_argument('--scale_calib_enable', type=bool,
                     help="Scale calibration. Only run while NOT in flight")
+parser.add_argument('--camera_orientation', type=int,
+                    help="Configuration for camera orientation. Currently supported: forward, usb port to the right - 0; downward, usb port to the right - 1")
 
 args = parser.parse_args()
 
@@ -104,6 +90,7 @@ connection_baudrate = args.baudrate
 vision_msg_hz = args.vision_msg_hz
 confidence_msg_hz = args.confidence_msg_hz
 scale_calib_enable = args.scale_calib_enable
+camera_orientation = args.camera_orientation
 
 # Using default values if no specified inputs
 if not connection_string:
@@ -147,6 +134,30 @@ else:
         print("INFO: Using default scale factor", scale_factor)
     else:
         print("INFO: Using scale factor", scale_factor)
+
+if not camera_orientation:
+    camera_orientation = camera_orientation_default
+    print("INFO: Using default camera orientation", camera_orientation)
+else:
+    print("INFO: Using camera orientation", camera_orientation)
+
+# Transformation to convert different camera orientations to NED convention. Replace camera_orientation_default for your configuration.
+#   0: Forward, USB port to the right
+#   1: Downfacing, USB port to the right 
+# Important note for downfacing camera: you need to tilt the vehicle's nose up a little - not flat - before you run the script, otherwise the initial yaw will be randomized, read here for more details: https://github.com/IntelRealSense/librealsense/issues/4080. Tilt the vehicle to any other sides and the yaw might not be as stable.
+
+if camera_orientation == 0: 
+    # Forward, USB port to the right
+    H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
+    H_T265body_aeroBody = np.array([[0,1,0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
+elif camera_orientation == 1:
+    # Downfacing, USB port to the right
+    H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
+    H_T265body_aeroBody = np.array([[0,1,0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
+else: 
+    # Default is facing forward, USB port to the right
+    H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
+    H_T265body_aeroBody = np.array([[0,1,0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
 
 #######################################
 # Functions
