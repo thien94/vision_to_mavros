@@ -149,7 +149,7 @@ else:
 if camera_orientation == 0: 
     # Forward, USB port to the right
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-    H_T265body_aeroBody = np.array([[0,1,0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
+    H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 elif camera_orientation == 1:
     # Downfacing, USB port to the right
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
@@ -157,7 +157,7 @@ elif camera_orientation == 1:
 else: 
     # Default is facing forward, USB port to the right
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-    H_T265body_aeroBody = np.array([[0,1,0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
+    H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 
 #######################################
 # Functions
