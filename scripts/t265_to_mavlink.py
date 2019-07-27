@@ -168,7 +168,8 @@ if not debug_enable:
     debug_enable = 0
 else:
     debug_enable = 1
-    print("INFO: Debug messages enabled")
+    np.set_printoptions(precision=4, suppress=True) # Format output on terminal 
+    print("INFO: Debug messages enabled.")
 
 #######################################
 # Functions
@@ -415,11 +416,13 @@ try:
             # Show debug messages here
             if debug_enable == 1:
                 os.system('clear') # This helps in displaying the messages to be more readable
-                print("DEBUG: Raw RPY[deg]: {}".format(np.array( tf.euler_from_matrix(H_T265Ref_T265body, 'sxyz')) * 180 / m.pi))
-                print("DEBUG: NED RPY[deg]: {}".format(np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz')) * 180 / m.pi))
+                print("DEBUG: Raw RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_T265Ref_T265body, 'sxyz')) * 180 / m.pi))
+                print("DEBUG: NED RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_aeroRef_aeroBody, 'sxyz')) * 180 / m.pi))
+                print("DEBUG: Raw pos xyz : {}".format( np.array( [data.translation.x, data.translation.y, data.translation.z])))
+                print("DEBUG: NED pos xyz : {}".format( np.array( tf.translation_from_matrix( H_aeroRef_aeroBody))))
                 
 except KeyboardInterrupt:
-    print("INFO: KeyboardInterrupt has been caught. Cleaning up...")               
+    print("INFO: KeyboardInterrupt has been caught. Cleaning up...")     
 
 finally:
     pipe.stop()
