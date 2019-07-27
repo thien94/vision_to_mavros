@@ -82,6 +82,9 @@ parser.add_argument('--scale_calib_enable', type=bool,
                     help="Scale calibration. Only run while NOT in flight")
 parser.add_argument('--camera_orientation', type=int,
                     help="Configuration for camera orientation. Currently supported: forward, usb port to the right - 0; downward, usb port to the right - 1")
+parser.add_argument('--debug_enable',type=int,
+                    help="Enable debug messages on terminal")
+
 
 args = parser.parse_args()
 
@@ -91,6 +94,7 @@ vision_msg_hz = args.vision_msg_hz
 confidence_msg_hz = args.confidence_msg_hz
 scale_calib_enable = args.scale_calib_enable
 camera_orientation = args.camera_orientation
+debug_enable = args.debug_enable
 
 # Using default values if no specified inputs
 if not connection_string:
@@ -158,6 +162,13 @@ else:
     # Default is facing forward, USB port to the right
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
     H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
+
+
+if not debug_enable:
+    debug_enable = 0
+else:
+    debug_enable = 1
+    print("INFO: Debug messages enabled")
 
 #######################################
 # Functions
@@ -401,6 +412,12 @@ try:
             if compass_enabled == 1:
                 H_aeroRef_aeroBody = H_aeroRef_aeroBody.dot( tf.euler_matrix(0, 0, heading_north_yaw, 'sxyz'))
 
+            # Show debug messages here
+            if debug_enable == 1:
+                os.system('clear') # This helps in displaying the messages to be more readable
+                print("DEBUG: Raw RPY[deg]: {}".format(np.array( tf.euler_from_matrix(H_T265Ref_T265body, 'sxyz')) * 180 / m.pi))
+                print("DEBUG: NED RPY[deg]: {}".format(np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz')) * 180 / m.pi))
+                
 except KeyboardInterrupt:
     print("INFO: KeyboardInterrupt has been caught. Cleaning up...")               
 
