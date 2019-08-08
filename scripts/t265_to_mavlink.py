@@ -10,7 +10,7 @@
 #   pip3 install dronekit
 #   pip3 install apscheduler
 
- # Set the path for IDLE
+# Set the path for IDLE
 import sys
 sys.path.append("/usr/local/lib/")
 
@@ -69,7 +69,7 @@ pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
 # Parsing user' inputs
 #######################################
 
-parser = argparse.ArgumentParser(description='Reboots vehicle')
+parser = argparse.ArgumentParser(description='List of arguments')
 parser.add_argument('--connect',
                     help="Vehicle connection target string. If not specified, a default string will be used.")
 parser.add_argument('--baudrate', type=float,
@@ -82,6 +82,14 @@ parser.add_argument('--scale_calib_enable', type=bool,
                     help="Scale calibration. Only run while NOT in flight")
 parser.add_argument('--camera_orientation', type=int,
                     help="Configuration for camera orientation. Currently supported: forward, usb port to the right - 0; downward, usb port to the right - 1")
+
+parser.add_argument('--t265_enable_mapping', type=float,
+                    help="Disable this will cause T265 to operate completely open loop (i.e. just doing VIO) and will have more drift.")
+parser.add_argument('--t265_enable_pose_jumping', type=float,
+                    help="Disable this will cause T265 to NOT discontinuously jump its pose whenever it discovers its pose is inconsistent with one it has given before.")
+parser.add_argument('--t265_enable_relocalization', type=float,
+                    help="Disable this will cause T265 to NOT solve the Kidnapped Robot Problem, i.e. it will allow connecting the current map to a loaded map or connecting the current map to itself after accumulating a large drift.")
+
 parser.add_argument('--debug_enable',type=int,
                     help="Enable debug messages on terminal")
 
@@ -94,6 +102,9 @@ vision_msg_hz = args.vision_msg_hz
 confidence_msg_hz = args.confidence_msg_hz
 scale_calib_enable = args.scale_calib_enable
 camera_orientation = args.camera_orientation
+t265_enable_mapping = args.t265_enable_mapping
+t265_enable_pose_jumping = args.t265_enable_pose_jumping
+t265_enable_relocalization = args.t265_enable_relocalization
 debug_enable = args.debug_enable
 
 # Using default values if no specified inputs
@@ -163,7 +174,33 @@ else:
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
     H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 
+if t265_enable_mapping is None:
+    t265_enable_mapping = 1
+    print("INFO: T265 - mapping enabled")
+elif t265_enable_mapping == 0:
+    print("INFO: T265 - mapping DISABLED")
+else:
+    t265_enable_mapping = 1
+    print("INFO: T265 - mapping enabled")
 
+if t265_enable_pose_jumping is None:
+    t265_enable_pose_jumping = 1
+    print("INFO: T265 - pose jumping enabled")
+elif t265_enable_pose_jumping == 0:
+    print("INFO: T265 - pose jumping DISABLED")
+else:
+    t265_enable_pose_jumping = 1
+    print("INFO: T265 - pose jumping enabled")
+
+if t265_enable_relocalization is None:
+    t265_enable_relocalization = 1
+    print("INFO: T265 - relocalization enabled")
+elif t265_enable_relocalization == 0:
+    print("INFO: T265 - relocalization DISABLED")
+else:
+    t265_enable_relocalization = 1
+    print("INFO: T265 - relocalization enabled")
+    
 if not debug_enable:
     debug_enable = 0
 else:
@@ -298,10 +335,14 @@ def att_msg_callback(self, attr_name, value):
         print("INFO: Received ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
 
 def vehicle_connect():
-    global vehicle
+    global vehicle, pipe
     
     try:
         vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
+    except KeyboardInterrupt:    
+        pipe.stop()
+        print("INFO: Exiting")
+        sys.exit()
     except:
         print('Connection error! Retrying...')
 
@@ -321,8 +362,18 @@ def realsense_connect():
     # Enable the stream we are interested in
     cfg.enable_stream(rs.stream.pose) # Positional data 
 
+    # Enable/disable advance options for T265, described here: https://github.com/IntelRealSense/librealsense/blob/development/doc/t265.md#are-there-any-t265-specific-options
+    profile = cfg.resolve(pipe) # does not start streaming
+    pose_sensor = profile.get_device().first_pose_sensor()
+    pose_sensor.set_option(rs.option.enable_mapping, t265_enable_mapping)
+    # Seems like when mapping is disabled, pose_jumping and relocalization options are not accessible
+    if t265_enable_mapping == 0:
+        pose_sensor.set_option(rs.option.enable_pose_jumping, t265_enable_pose_jumping)
+        pose_sensor.set_option(rs.option.enable_relocalization, t265_enable_relocalization)
+
     # Start streaming with requested config
     pipe.start(cfg)
+    
 
 # Monitor user input from the terminal and update scale factor accordingly
 def scale_update():
