@@ -38,9 +38,9 @@ from pymavlink import mavutil
 # Default configurations for connection to the FCU
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
-vision_msg_hz_default = 30
+vision_msg_hz_default = 20
 confidence_msg_hz_default = 1
-camera_orientation_default = 0
+camera_orientation_default = 1
 
 # In NED frame, offset from the IMU or the center of gravity to the camera's origin point
 body_offset_enabled = 0
@@ -355,6 +355,7 @@ data = None
 current_confidence = None
 H_aeroRef_aeroBody = None
 heading_north_yaw = None
+heading_camera_init = None
 
 # Send MAVlink messages in the background
 sched = BackgroundScheduler()
@@ -370,7 +371,7 @@ if scale_calib_enable == True:
 
 sched.start()
 
-if compass_enabled == 1:
+if compass_enabled == 1 or camera_orientation == 1:
     # Wait a short while for yaw to be correctly initiated
     time.sleep(1)
 
@@ -391,6 +392,9 @@ try:
             # Pose data consists of translation and rotation
             data = pose.get_pose_data()
 
+            if heading_camera_init == None:
+                heading_camera_init = tf.euler_from_quaternion([data.rotation.w, data.rotation.x, data.rotation.y, data.rotation.z], 'sxyz')[1]
+
             # In transformations, Quaternions w+ix+jy+kz are represented as [w, x, y, z]!
             H_T265Ref_T265body = tf.quaternion_matrix([data.rotation.w, data.rotation.x, data.rotation.y, data.rotation.z]) 
             H_T265Ref_T265body[0][3] = data.translation.x * scale_factor
@@ -408,6 +412,10 @@ try:
                 H_body_camera[2][3] = body_offset_z
                 H_camera_body = np.linalg.inv(H_body_camera)
                 H_aeroRef_aeroBody = H_body_camera.dot(H_aeroRef_aeroBody.dot(H_camera_body))
+
+            # For downfacing camera, the original yaw is offsetted by an arbitrary amount
+            if camera_orientation == 1:
+                H_aeroRef_aeroBody = H_aeroRef_aeroBody.dot( tf.euler_matrix(0, 0, heading_camera_init, 'sxyz'))
 
             # Realign heading to face north using initial compass data
             if compass_enabled == 1:
