@@ -1,12 +1,29 @@
+#!/usr/bin/env python3
+
 #####################################################
-##          librealsense T265 streams test         ##
+##          librealsense T265 to MAVLink           ##
 #####################################################
-# This assumes .so file is found on the same directory
+# This script assumes pyrealsense2.[].so file is found under the same directory as this script
+# Install required packages: 
+#   pip install pyrealsense2
+#   pip install transformations
+#   pip3 install dronekit
+#   pip3 install apscheduler
+# sudo apt-get install python3-pip python3-yaml
+# sudo pip3 install rospkg catkin_pkg
+
+# Remove the path to python2 version (added by ROS, see here https://stackoverflow.com/questions/43019951/after-install-ros-kinetic-cannot-import-opencv)
+import sys, os
+sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
+
 import pyrealsense2 as rs
 
 # Prettier prints for reverse-engineering
 from pprint import pprint
+
 import numpy as np
+import cv2
+from apriltag import apriltag
 
 # Get realsense pipeline handle
 pipe = rs.pipeline()
