@@ -3,16 +3,15 @@
 #####################################################
 ##   Precision Landing with T265 using AprilTags   ##
 #####################################################
-# This script assumes pyrealsense2.[].so file is found under the same directory as this script
-# Install required packages: 
-#   pip install pyrealsense2
-#   pip install transformations
+# Install required packages:
+#   pip3 install transformations
 #   pip3 install dronekit
 #   pip3 install apscheduler
-#   sudo apt-get install python3-pip python3-yaml
-#   sudo pip3 install rospkg catkin_pkg
+# Next, put the apriltags3.py (Python wrapper for apriltag3) in the same folder as this script:
+#   cd /path/to/script
+#   wget https://raw.githubusercontent.com/duckietown/apriltags3-py/master/apriltags3.py
 
- # Set the path for IDLE
+# Set the path for pyrealsense2.[].so
 import sys
 sys.path.append("/usr/local/lib/")
 
@@ -24,8 +23,6 @@ if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
 import os
 os.environ["MAVLINK20"] = "1"
 
-# os.system(". ~/py3librs/bin/activate")
-
 # Import the libraries
 import pyrealsense2 as rs
 import cv2
@@ -35,12 +32,15 @@ import math as m
 import time
 import argparse
 import threading
-from apscheduler.schedulers.background import BackgroundScheduler
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from dronekit import connect, VehicleMode
 from pymavlink import mavutil
 
-import apriltags3 
+try:
+    import apriltags3 
+except ImportError:
+    raise ImportError('Please download the Python wrapper for apriltag3 (apriltags3.py) and put it in the same folder as this script or add the directory path to the PYTHONPATH environment variable.')
 
 #######################################
 # Parameters for FCU and MAVLink
@@ -103,8 +103,8 @@ parser.add_argument('--scale_calib_enable', type=bool,
                     help="Scale calibration. Only run while NOT in flight")
 parser.add_argument('--camera_orientation', type=int,
                     help="Configuration for camera orientation. Currently supported: forward, usb port to the right - 0; downward, usb port to the right - 1")
-parser.add_argument('--display_enable',type=int,
-                    help="Enable display images. Ensure that display is connected")
+parser.add_argument('--visualization',type=int,
+                    help="Enable display images. Ensure that a monitor is connected")
 parser.add_argument('--debug_enable',type=int,
                     help="Enable debug messages on terminal")
 
@@ -117,7 +117,7 @@ obstacle_distance_msg_hz = args.obstacle_distance_msg_hz
 confidence_msg_hz = args.confidence_msg_hz
 scale_calib_enable = args.scale_calib_enable
 camera_orientation = args.camera_orientation
-display_enable = args.display_enable
+visualization = args.visualization
 debug_enable = args.debug_enable
 
 # Using default values if no input is provided
@@ -169,15 +169,15 @@ else:
     else:
         print("INFO: Using scale factor", scale_factor)
 
-if not display_enable:
-    display_enable = 0
+if not visualization:
+    visualization = 0
     print("INFO: Display images: Disabled")
 else:
-    display_enable = 1
+    visualization = 1
     print("INFO: Display images: Enabled. Checking if monitor is connected...")
-    WINDOW_TITLE = 'T265 images'
+    WINDOW_TITLE = 'Apriltag detection from T265 images'
     cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_AUTOSIZE)
-    print("INFO: Monitor is connected. Press `s`: stack the images side by side, `o`: overlay depth over rgb, `q`: exit.")
+    print("INFO: Monitor is connected. Press `q` to exit.")
     display_mode = "stack"
 
 if not debug_enable:
@@ -250,6 +250,9 @@ def fisheye_distortion(intrinsics):
 #######################################
 # Functions for AprilTag detection
 #######################################
+tag_size = 0.144            # tag's border size, measured in meter
+tag_image_source = "right"   # for Realsense T265, we can use "left" or "right"
+
 at_detector = apriltags3.Detector(searchpath=['apriltags'],
                        families='tag36h11',
                        nthreads=1,
@@ -575,7 +578,7 @@ try:
     #     \   |   /
     #      \ fov /
     #        \|/
-    stereo_fov_rad = 90 * (m.pi/180)    # 90 degree desired fov
+    stereo_fov_rad = 90 * (m.pi/180)    # desired fov degree, 90 seems to work ok
     stereo_height_px = 300              # 300x300 pixel stereo output
     stereo_focal_px = stereo_height_px/2 / m.tan(stereo_fov_rad/2)
 
@@ -684,40 +687,56 @@ try:
                                       map2 = undistort_rectify["right"][1],
                                       interpolation = cv2.INTER_LINEAR)}
 
-        tags = at_detector.detect(center_undistorted["left"], True, camera_params, 0.144)
-        print(tags)
+        # Run AprilTag detection algorithm on rectified image. 
+        # Params:
+        #   tag_image_source for "left" or "right"
+        #   tag_size for actual size of the tag
+        tags = at_detector.detect(center_undistorted[tag_image_source], True, camera_params, tag_size)
+
+        if tags == []:
+            print("No tag detected")
+        else:
+            print(tags)
 
         if debug_enable == 1:
             print("INFO: distances from left to right: ", distances[0], distances[20], int(np.mean(distances[33:38])), distances[60], distances[71])
 
-        # If enabled, display the undistorted image and disparity image in the same window
-        if display_enable == 1:
-            # convert disparity to 0-255 and color it
-            disp_vis = 255 * (disparity - min_disp)/ num_disp
-            disp_color = cv2.applyColorMap(cv2.convertScaleAbs(disp_vis,1), cv2.COLORMAP_JET)
-            color_image = cv2.cvtColor(center_undistorted["left"][:,max_disp:], cv2.COLOR_GRAY2RGB)
+        # If enabled, display tag-detected image in a pop-up window, required a monitor to be connected
+        if visualization == 1:
+            # Create color image from source
+            tags_img = center_undistorted[tag_image_source]
+                
+            # For each detected tag, draw a bounding box and put the id of the tag in the center
+            for tag in tags:
+                # Setup bounding box
+                for idx in range(len(tag.corners)):
+                    cv2.line(tags_img, 
+                            tuple(tag.corners[idx-1, :].astype(int)), 
+                            tuple(tag.corners[idx, :].astype(int)), 
+                            thickness = 2,
+                            color = (255, 0, 0))
 
-            # Prepare the image to be displayed
-            if display_mode == "stack":
-                display_image = np.hstack((color_image, disp_color))
-            elif display_mode == "overlay":
-                display_image = color_image
-                ind = disparity >= min_disp
-                display_image[ind, 0] = disp_color[ind, 0]
-                display_image[ind, 1] = disp_color[ind, 1]
-                display_image[ind, 2] = disp_color[ind, 2]
-            elif display_mode == "depth":
-                # display_image = depth_image
-                display_image = np.hstack((points_3D, disp_color))
+                # The text to be put in the image, here we simply put the id of the detected tag
+                text = str(tag.tag_id)
 
-            # Display the image
-            cv2.imshow(WINDOW_TITLE, display_image)
+                # get boundary of this text
+                textsize = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+
+                # Put the text in the middle of the image
+                cv2.putText(tags_img, 
+                            text,
+                            org = (((tag.corners[0, 0] + tag.corners[2, 0] - textsize[0])/2).astype(int), 
+                                   ((tag.corners[0, 1] + tag.corners[2, 1] + textsize[1])/2).astype(int)),
+                            fontFace = cv2.FONT_HERSHEY_SIMPLEX,
+                            fontScale = 0.5,
+                            thickness = 2,
+                            color = (255, 0, 0))
+
+            # Display the image in a window
+            cv2.imshow(WINDOW_TITLE, tags_img)
 
             # Read keyboard input on the image window
             key = cv2.waitKey(1)
-            if key == ord('s'): display_mode = "stack"
-            if key == ord('a'): display_mode = "overlay"
-            if key == ord('d'): display_mode = "depth"
             if key == ord('q') or cv2.getWindowProperty(WINDOW_TITLE, cv2.WND_PROP_VISIBLE) < 1:
                 break
 
