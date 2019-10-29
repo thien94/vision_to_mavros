@@ -52,7 +52,7 @@ connection_baudrate_default = 921600
 vision_msg_hz_default = 20
 obstacle_distance_msg_hz_default = 15
 confidence_msg_hz_default = 1
-camera_orientation_default = 0
+camera_orientation_default = 1
 
 # In NED frame, offset from the IMU or the center of gravity to the camera's origin point
 body_offset_enabled = 0
@@ -88,7 +88,7 @@ distances = np.zeros((72,), dtype=np.uint16)
 # Parsing user' inputs
 #######################################
 
-parser = argparse.ArgumentParser(description='Reboots vehicle')
+parser = argparse.ArgumentParser(description='ArduPilot + Realsense T265 + AprilTags')
 parser.add_argument('--connect',
                     help="Vehicle connection target string. If not specified, a default string will be used.")
 parser.add_argument('--baudrate', type=float,
@@ -104,7 +104,7 @@ parser.add_argument('--scale_calib_enable', type=bool,
 parser.add_argument('--camera_orientation', type=int,
                     help="Configuration for camera orientation. Currently supported: forward, usb port to the right - 0; downward, usb port to the right - 1")
 parser.add_argument('--visualization',type=int,
-                    help="Enable display images. Ensure that a monitor is connected")
+                    help="Enable visualization. Ensure that a monitor is connected")
 parser.add_argument('--debug_enable',type=int,
                     help="Enable debug messages on terminal")
 
@@ -171,10 +171,10 @@ else:
 
 if not visualization:
     visualization = 0
-    print("INFO: Display images: Disabled")
+    print("INFO: Visualization: Disabled")
 else:
     visualization = 1
-    print("INFO: Display images: Enabled. Checking if monitor is connected...")
+    print("INFO: Visualization: Enabled. Checking if monitor is connected...")
     WINDOW_TITLE = 'Apriltag detection from T265 images'
     cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_AUTOSIZE)
     print("INFO: Monitor is connected. Press `q` to exit.")
@@ -206,6 +206,7 @@ elif camera_orientation == 1:
     # Downfacing, USB port to the right
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
     H_T265body_aeroBody = np.array([[0,1,0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
+    H_aeroBody_imageframe = np.array([[0,-1,0,0],[1,0,0,0],[0,0,1,0],[0,0,0,1]])
 else: 
     # Default is facing forward, USB port to the right
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
@@ -250,7 +251,8 @@ def fisheye_distortion(intrinsics):
 #######################################
 # Functions for AprilTag detection
 #######################################
-tag_size = 0.144            # tag's border size, measured in meter
+tag_landing_id = 0
+tag_landing_size = 0.144            # tag's border size, measured in meter
 tag_image_source = "right"   # for Realsense T265, we can use "left" or "right"
 
 at_detector = apriltags3.Detector(searchpath=['apriltags'],
@@ -661,12 +663,12 @@ try:
                 H_aeroRef_aeroBody = H_aeroRef_aeroBody.dot( tf.euler_matrix(0, 0, heading_north_yaw, 'sxyz'))
 
             # Show debug messages here
-            # if debug_enable == 1:
-            #     os.system('clear') # This helps in displaying the messages to be more readable
-            #     print("DEBUG: Raw RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_T265Ref_T265body, 'sxyz')) * 180 / m.pi))
-            #     print("DEBUG: NED RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_aeroRef_aeroBody, 'sxyz')) * 180 / m.pi))
-            #     print("DEBUG: Raw pos xyz : {}".format( np.array( [data.translation.x, data.translation.y, data.translation.z])))
-            #     print("DEBUG: NED pos xyz : {}".format( np.array( tf.translation_from_matrix( H_aeroRef_aeroBody))))
+            if debug_enable == 1:
+                os.system('clear') # This helps in displaying the messages to be more readable
+                print("DEBUG: Raw RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_T265Ref_T265body, 'sxyz')) * 180 / m.pi))
+                print("DEBUG: NED RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_aeroRef_aeroBody, 'sxyz')) * 180 / m.pi))
+                print("DEBUG: Raw pos xyz : {}".format( np.array( [data.translation.x, data.translation.y, data.translation.z])))
+                print("DEBUG: NED pos xyz : {}".format( np.array( tf.translation_from_matrix( H_aeroRef_aeroBody))))
 
         # Fetch raw fisheye image frames
         f1 = frames.get_fisheye_frame(1).as_video_frame()
@@ -690,13 +692,23 @@ try:
         # Run AprilTag detection algorithm on rectified image. 
         # Params:
         #   tag_image_source for "left" or "right"
-        #   tag_size for actual size of the tag
-        tags = at_detector.detect(center_undistorted[tag_image_source], True, camera_params, tag_size)
+        #   tag_landing_size for actual size of the tag
+        tags = at_detector.detect(center_undistorted[tag_image_source], True, camera_params, tag_landing_size)
 
-        if tags == []:
-            print("No tag detected")
-        else:
-            print(tags)
+        if tags != []:
+            for tag in tags:
+                print("INFO: Detected tag id", str(tag.tag_id), "relative to camera at x:", tag.pose_t[0], ", y:", tag.pose_t[1], ", z:", tag.pose_t[2])
+                # Check for the tag that we want to land on
+                if tag.tag_id == tag_landing_id:
+                    H_camera_tag = tf.euler_matrix(0, 0, 0, 'sxyz')
+                    H_camera_tag[0][3] = tag.pose_t[0]
+                    H_camera_tag[1][3] = tag.pose_t[1]
+                    H_camera_tag[2][3] = tag.pose_t[2]
+                    H_aeroRef_tag = H_aeroBody_imageframe.dot( H_camera_tag.dot( H_aeroRef_aeroBody))
+                    # print("INFO: Tag detected 1 at x y z: ", H_aeroRef_tag[0][3], H_aeroRef_tag[1][3], H_aeroRef_tag[2][3])
+                    # print("INFO: Body is at x y z: ", H_aeroRef_aeroBody[0][3], H_aeroRef_aeroBody[1][3], H_aeroRef_aeroBody[2][3])
+        # else:
+        #     print("INFO: No tag detected")
 
         if debug_enable == 1:
             print("INFO: distances from left to right: ", distances[0], distances[20], int(np.mean(distances[33:38])), distances[60], distances[71])
