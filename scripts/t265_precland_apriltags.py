@@ -50,7 +50,7 @@ except ImportError:
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 20
-obstacle_distance_msg_hz_default = 15
+landing_target_msg_hz_default = 15
 confidence_msg_hz_default = 1
 camera_orientation_default = 1
 
@@ -80,10 +80,6 @@ pipe = None
 # pose data confidence: 0x0 - Failed / 0x1 - Low / 0x2 - Medium / 0x3 - High 
 pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
 
-# Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
-# See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
-distances = np.zeros((72,), dtype=np.uint16)
-
 #######################################
 # Parsing user' inputs
 #######################################
@@ -95,8 +91,8 @@ parser.add_argument('--baudrate', type=float,
                     help="Vehicle connection baudrate. If not specified, a default value will be used.")
 parser.add_argument('--vision_msg_hz', type=float,
                     help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
-parser.add_argument('--obstacle_distance_msg_hz', type=float,
-                    help="Update frequency for OBSTALCE_DISTANCE message. If not specified, a default value will be used.")
+parser.add_argument('--landing_target_msg_hz', type=float,
+                    help="Update frequency for LANDING_TARGET message. If not specified, a default value will be used.")
 parser.add_argument('--confidence_msg_hz', type=float,
                     help="Update frequency for confidence level. If not specified, a default value will be used.")
 parser.add_argument('--scale_calib_enable', type=bool,
@@ -113,7 +109,7 @@ args = parser.parse_args()
 connection_string = args.connect
 connection_baudrate = args.baudrate
 vision_msg_hz = args.vision_msg_hz
-obstacle_distance_msg_hz = args.obstacle_distance_msg_hz
+landing_target_msg_hz = args.landing_target_msg_hz
 confidence_msg_hz = args.confidence_msg_hz
 scale_calib_enable = args.scale_calib_enable
 camera_orientation = args.camera_orientation
@@ -145,11 +141,11 @@ if not confidence_msg_hz:
 else:
     print("INFO: Using confidence_msg_hz", confidence_msg_hz)
 
-if not obstacle_distance_msg_hz:
-    obstacle_distance_msg_hz = obstacle_distance_msg_hz_default
-    print("INFO: Using default obstacle_distance_msg_hz", obstacle_distance_msg_hz)
+if not landing_target_msg_hz:
+    landing_target_msg_hz = landing_target_msg_hz_default
+    print("INFO: Using default landing_target_msg_hz", landing_target_msg_hz)
 else:
-    print("INFO: Using obstacle_distance_msg_hz", obstacle_distance_msg_hz)
+    print("INFO: Using landing_target_msg_hz", landing_target_msg_hz)
 
 if body_offset_enabled == 1:
     print("INFO: Using camera position offset: Enabled, x y z is", body_offset_x, body_offset_y, body_offset_z)
@@ -268,47 +264,30 @@ at_detector = apriltags3.Detector(searchpath=['apriltags'],
 # Functions for MAVLink
 #######################################
 
-# https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
-# In the case of a forward facing camera with a 90deg wide view (45 left, 45 right) a message would look like:
-# angle_offset = (MiddleAngle-half) = 0 - (90/2) = -45
-# increment_f = (90/72) = 1.25
-def send_obstacle_distance_message():
-    global current_time, distances
+# Define function to send landing_target mavlink message for mavlink based precision landing
+# http://mavlink.org/messages/common#LANDING_TARGET
+def send_land_target_message():
+    global current_time, H_aeroRef_tag, is_landing_tag_detected
 
-    msg = vehicle.message_factory.obstacle_distance_encode(
-        current_time,                           # us Timestamp (UNIX time or time since system boot)
-        0,                                      # sensor_type, defined here: https://mavlink.io/en/messages/common.html#MAV_DISTANCE_SENSOR
-        distances,                              # distances[72]
-        0,                                      # increment, uint8_t, deg
-        5,	                                    # min_distance, uint16_t, cm
-        65,                                     # max_distance, uint16_t, cm
-        1.25,	                                # increment_f, float, deg
-        -45                                     # angle_offset, float, deg
-    )
-
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
-
-# https://mavlink.io/en/messages/common.html#DISTANCE_SENSOR
-def send_distance_sensor_message():
-    global current_time, distances
-
-    # Average out a portion of the centermost part
-    curr_dist = int(np.mean(distances[33:38]))
-
-    msg = vehicle.message_factory.distance_sensor_encode(
-        0,              # us Timestamp (UNIX time or time since system boot) (ignored)
-        10,             # min_distance, uint16_t, cm
-        65,             # min_distance, uint16_t, cm
-        curr_dist,      # current_distance,	uint16_t, cm	
-        0,	            # type : 0 (ignored)
-        0,              # id : 0 (ignored)
-        0,              # forward
-        0               # covariance : 0 (ignored)
-    )
-
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
+    if is_landing_tag_detected == True:
+        msg = vehicle.message_factory.landing_target_encode(
+        current_time,                           # time target data was processed, as close to sensor capture as possible
+            0,                                  # target num, not used
+            mavutil.mavlink.MAV_FRAME_BODY_NED, # frame, not used
+            0,                                  # X-axis angular offset, in radians
+            0,                                  # Y-axis angular offset, in radians
+            0,                                  # distance, in meters
+            0,                                  # Target x-axis size, in radians
+            0,                                  # Target y-axis size, in radians
+            H_aeroRef_tag[0][3],                # x	float	X Position of the landing target on MAV_FRAME
+            H_aeroRef_tag[1][3],                # y	float	Y Position of the landing target on MAV_FRAME
+            H_aeroRef_tag[2][3],                # z	float	Z Position of the landing target on MAV_FRAME
+            (1,0,0,0),      # q	float[4]	Quaternion of landing target orientation (w, x, y, z order, zero-rotation is 1, 0, 0, 0)
+            2,              # type of landing target: 2 = Fiducial marker
+            1,              # position_valid boolean
+        )
+        vehicle.send_mavlink(msg)
+        vehicle.flush()
 
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
 def send_vision_position_message():
@@ -485,29 +464,30 @@ print("INFO: Connecting to Realsense camera.")
 realsense_connect()
 print("INFO: Realsense connected.")
 
-# print("INFO: Connecting to vehicle.")
-# while (not vehicle_connect()):
-#     pass
-# print("INFO: Vehicle connected.")
+print("INFO: Connecting to vehicle.")
+while (not vehicle_connect()):
+    pass
+print("INFO: Vehicle connected.")
 
 # Listen to the mavlink messages that will be used as trigger to set EKF home automatically
-# vehicle.add_message_listener('STATUSTEXT', statustext_callback)
+vehicle.add_message_listener('STATUSTEXT', statustext_callback)
 
-# if compass_enabled == 1:
-#     # Listen to the attitude data in aeronautical frame
-#     vehicle.add_message_listener('ATTITUDE', att_msg_callback)
+if compass_enabled == 1:
+    # Listen to the attitude data in aeronautical frame
+    vehicle.add_message_listener('ATTITUDE', att_msg_callback)
 
 data = None
 current_confidence = None
 H_aeroRef_aeroBody = None
+H_aeroRef_tag = None
+is_landing_tag_detected = False # This flag returns true only if the tag with landing id is currently detected
 heading_north_yaw = None
 
 # Send MAVlink messages in the background
 sched = BackgroundScheduler()
-# sched.add_job(send_vision_position_message, 'interval', seconds = 1/vision_msg_hz)
-# sched.add_job(send_confidence_level_dummy_message, 'interval', seconds = 1/confidence_msg_hz)
-# sched.add_job(send_obstacle_distance_message, 'interval', seconds = 1/obstacle_distance_msg_hz)
-# sched.add_job(send_distance_sensor_message, 'interval', seconds = 1/obstacle_distance_msg_hz)
+sched.add_job(send_vision_position_message, 'interval', seconds = 1/vision_msg_hz)
+sched.add_job(send_confidence_level_dummy_message, 'interval', seconds = 1/confidence_msg_hz)
+sched.add_job(send_land_target_message, 'interval', seconds = 1/landing_target_msg_hz_default)
 
 # For scale calibration, we will use a thread to monitor user input
 if scale_calib_enable == True:
@@ -521,7 +501,7 @@ if compass_enabled == 1:
     # Wait a short while for yaw to be correctly initiated
     time.sleep(1)
 
-print("INFO: Sending VISION_POSITION_ESTIMATE messages to FCU.")
+print("INFO: Starting main loop...")
 
 try:
     # Configure the OpenCV stereo algorithm. See
@@ -697,18 +677,20 @@ try:
 
         if tags != []:
             for tag in tags:
-                print("INFO: Detected tag id", str(tag.tag_id), "relative to camera at x:", tag.pose_t[0], ", y:", tag.pose_t[1], ", z:", tag.pose_t[2])
                 # Check for the tag that we want to land on
                 if tag.tag_id == tag_landing_id:
+                    is_landing_tag_detected = True
                     H_camera_tag = tf.euler_matrix(0, 0, 0, 'sxyz')
                     H_camera_tag[0][3] = tag.pose_t[0]
                     H_camera_tag[1][3] = tag.pose_t[1]
                     H_camera_tag[2][3] = tag.pose_t[2]
-                    H_aeroRef_tag = H_aeroBody_imageframe.dot( H_camera_tag.dot( H_aeroRef_aeroBody))
+                    H_aeroRef_tag = H_aeroBody_imageframe.dot( H_camera_tag)#.dot( H_aeroRef_aeroBody))
+                    print("INFO: Detected landing tag", str(tag.tag_id), " relative to camera at x:", H_aeroRef_tag[0][3], ", y:", H_aeroRef_tag[1][3], ", z:", H_aeroRef_tag[2][3])
                     # print("INFO: Tag detected 1 at x y z: ", H_aeroRef_tag[0][3], H_aeroRef_tag[1][3], H_aeroRef_tag[2][3])
                     # print("INFO: Body is at x y z: ", H_aeroRef_aeroBody[0][3], H_aeroRef_aeroBody[1][3], H_aeroRef_aeroBody[2][3])
-        # else:
-        #     print("INFO: No tag detected")
+        else:
+            # print("INFO: No tag detected")
+            is_landing_tag_detected = False
 
         if debug_enable == 1:
             print("INFO: distances from left to right: ", distances[0], distances[20], int(np.mean(distances[33:38])), distances[60], distances[71])
