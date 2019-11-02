@@ -50,7 +50,7 @@ except ImportError:
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 20
-landing_target_msg_hz_default = 15
+landing_target_msg_hz_default = 20
 confidence_msg_hz_default = 1
 camera_orientation_default = 1
 
@@ -202,7 +202,6 @@ elif camera_orientation == 1:
     # Downfacing, USB port to the right
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
     H_T265body_aeroBody = np.array([[0,1,0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
-    H_aeroBody_imageframe = np.array([[0,-1,0,0],[1,0,0,0],[0,0,1,0],[0,0,0,1]])
 else: 
     # Default is facing forward, USB port to the right
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
@@ -267,21 +266,23 @@ at_detector = apriltags3.Detector(searchpath=['apriltags'],
 # Define function to send landing_target mavlink message for mavlink based precision landing
 # http://mavlink.org/messages/common#LANDING_TARGET
 def send_land_target_message():
-    global current_time, H_aeroRef_tag, is_landing_tag_detected
+    global current_time, H_camera_tag, is_landing_tag_detected
 
     if is_landing_tag_detected == True:
+        x_offset_rad = m.atan(H_camera_tag[0][3] / H_camera_tag[2][3])
+        y_offset_rad = m.atan(H_camera_tag[1][3] / H_camera_tag[2][3])
         msg = vehicle.message_factory.landing_target_encode(
         current_time,                           # time target data was processed, as close to sensor capture as possible
             0,                                  # target num, not used
             mavutil.mavlink.MAV_FRAME_BODY_NED, # frame, not used
-            0,                                  # X-axis angular offset, in radians
-            0,                                  # Y-axis angular offset, in radians
-            0,                                  # distance, in meters
+            x_offset_rad,                       # X-axis angular offset, in radians
+            y_offset_rad,                       # Y-axis angular offset, in radians
+            H_camera_tag[2][3],                # distance, in meters
             0,                                  # Target x-axis size, in radians
             0,                                  # Target y-axis size, in radians
-            H_aeroRef_tag[0][3],                # x	float	X Position of the landing target on MAV_FRAME
-            H_aeroRef_tag[1][3],                # y	float	Y Position of the landing target on MAV_FRAME
-            H_aeroRef_tag[2][3],                # z	float	Z Position of the landing target on MAV_FRAME
+            0,                                  # x	float	X Position of the landing target on MAV_FRAME
+            0,                                  # y	float	Y Position of the landing target on MAV_FRAME
+            0,                                  # z	float	Z Position of the landing target on MAV_FRAME
             (1,0,0,0),      # q	float[4]	Quaternion of landing target orientation (w, x, y, z order, zero-rotation is 1, 0, 0, 0)
             2,              # type of landing target: 2 = Fiducial marker
             1,              # position_valid boolean
@@ -479,7 +480,7 @@ if compass_enabled == 1:
 data = None
 current_confidence = None
 H_aeroRef_aeroBody = None
-H_aeroRef_tag = None
+H_camera_tag = None
 is_landing_tag_detected = False # This flag returns true only if the tag with landing id is currently detected
 heading_north_yaw = None
 
@@ -684,10 +685,7 @@ try:
                     H_camera_tag[0][3] = tag.pose_t[0]
                     H_camera_tag[1][3] = tag.pose_t[1]
                     H_camera_tag[2][3] = tag.pose_t[2]
-                    H_aeroRef_tag = H_aeroBody_imageframe.dot( H_camera_tag)#.dot( H_aeroRef_aeroBody))
-                    print("INFO: Detected landing tag", str(tag.tag_id), " relative to camera at x:", H_aeroRef_tag[0][3], ", y:", H_aeroRef_tag[1][3], ", z:", H_aeroRef_tag[2][3])
-                    # print("INFO: Tag detected 1 at x y z: ", H_aeroRef_tag[0][3], H_aeroRef_tag[1][3], H_aeroRef_tag[2][3])
-                    # print("INFO: Body is at x y z: ", H_aeroRef_aeroBody[0][3], H_aeroRef_aeroBody[1][3], H_aeroRef_aeroBody[2][3])
+                    print("INFO: Detected landing tag", str(tag.tag_id), " relative to camera at x:", H_camera_tag[0][3], ", y:", H_camera_tag[1][3], ", z:", H_camera_tag[2][3])
         else:
             # print("INFO: No tag detected")
             is_landing_tag_detected = False
