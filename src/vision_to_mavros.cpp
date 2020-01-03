@@ -6,8 +6,8 @@
 
 #include <string.h>
 
-int main(int argc, char** argv){
-
+int main(int argc, char** argv)
+{
   ros::init(argc, argv, "vision_to_mavros");
 
   ros::NodeHandle node;
