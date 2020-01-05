@@ -1,31 +1,11 @@
 <launch>
-
-    <!-- This node will undistort fisheye images obtained from the Realsense T265 camera (realsense-ros) -->
-
     <!-- <include file="$(find realsense2_camera)/launch/rs_t265.launch"/> -->
 
-    <arg name="camera_name" default="camera" />
-    <arg name="first_camera_name" default="fisheye1" />
-    <arg name="second_camera_name" default="fisheye2" />
-
-    <arg name="scale" default="1.0" />
-    <arg name="process_every_nth_frame" default="1" />
-    <arg name="config_file" default="$(find vision_to_mavros)/calib/t265.yaml"/>
+    <!-- This node will undistort fisheye images obtained from the Realsense T265 camera (realsense-ros) -->
+    <arg name="param_file_path" default="$(find vision_to_mavros)/cfg/t265.yaml"/>
 
     <node pkg="vision_to_mavros" name="t265_fisheye_undistort" type="t265_fisheye_undistort_node" output="screen">
-        
-        <rosparam file="$(arg config_file)" command="load" />
-
-        <!-- <param name="input_camera_info_from_ros_params" value = "true"/>
-        <param name="first_camera_namespace" value="$(arg first_camera_name)"/>
-        <param name="second_camera_namespace" value="$(arg second_camera_name)"/>
-        <param name="scale" value="$(arg scale)"/>
-        <param name="process_every_nth_frame" value="$(arg process_every_nth_frame)"/>
-        <param name="T_invert" value="true"/>
-        <param name="output_camera_info_source" value="match_input"/>
-
-        <remap from="raw/first/image" to="/$(camera_name)/$(arg first_camera_name)/image_raw"/>
-        <remap from="raw/second/image" to="/$(camera_name)/$(arg second_camera_name)/image_raw"/> -->
+        <param name="param_file_path" value="$(arg param_file_path)" /> 
     </node>
 
 </launch>

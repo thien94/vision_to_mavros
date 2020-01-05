@@ -1,25 +1,31 @@
 #include <ros/ros.h>
-#include <image_transport/image_transport.h>
-#include <opencv2/highgui/highgui.hpp>
 #include <cv_bridge/cv_bridge.h>
+#include <image_transport/image_transport.h>
+#include <message_filters/subscriber.h>
+#include <message_filters/synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
 #include <opencv2/opencv.hpp>
+#include <opencv2/highgui/highgui.hpp>
 
 using namespace cv;
 using namespace std;
 
+enum class CameraSide { LEFT, RIGHT };
+
 // Declare all the calibration matrices as Mat variables.
 Mat lmapx, lmapy, rmapx, rmapy;
 
-FileStorage config_file;
+image_transport::Publisher pub_img_rect_left, pub_img_rect_right;
 
-image_transport::Publisher pub_img_rect_left;
-image_transport::Publisher pub_img_rect_right;
+sensor_msgs::CameraInfo output_camera_info_left, output_camera_info_right;
+
+ros::Publisher left_camera_info_output_pub, right_camera_info_output_pub;
 
 // This function undistorts and rectifies the src image into dst. 
 // The homographic mappings lmapx, lmapy, rmapx, and rmapy are found from OpenCV’s initUndistortRectifyMap function.
-void undistortRectifyImage(Mat& src, Mat& dst, int left = 1)
+void undistort_rectify_image(Mat& src, Mat& dst, const CameraSide& side)
 {
-  if (left == 1) 
+  if (side == CameraSide::LEFT) 
   {
     remap(src, dst, lmapx, lmapy, cv::INTER_LINEAR);
   } 
@@ -32,24 +38,29 @@ void undistortRectifyImage(Mat& src, Mat& dst, int left = 1)
 // This function computes all the projection matrices and the rectification transformations 
 // using the stereoRectify and initUndistortRectifyMap functions respectively.
 // See documentation for stereoRectify: https://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html#stereorectify
-void init_rectification_map(FileStorage& config_file) 
+void init_rectification_map(string param_file_path) 
 {
   Mat Q, P1, P2;
   Mat R1, R2, K1, K2, D1, D2, R;
   Vec3d T;
+  Vec2d size_input, size_output;
 
-  config_file["K1"] >> K1;
-  config_file["D1"] >> D1;
-  config_file["K2"] >> K2;
-  config_file["D2"] >> D2;
-  config_file["R"]  >> R;
-  config_file["T"]  >> T;
+  FileStorage param_file = FileStorage(param_file_path, FileStorage::READ);
+
+  param_file["K1"] >> K1;
+  param_file["D1"] >> D1;
+  param_file["K2"] >> K2;
+  param_file["D2"] >> D2;
+  param_file["R"]  >> R;
+  param_file["T"]  >> T;
+  param_file["input"]  >> size_input;
+  param_file["output"] >> size_output;
 
   // The resolution of the input images used for stereo calibration.
-  Size input_img_size(848, 800);
+  Size input_img_size(size_input[0], size_input[1]);
 
   // The resolution of the output rectified images. Lower resolution images require less computation time.
-  Size output_img_size(800, 800);
+  Size output_img_size(size_output[0], size_output[1]);
   double alpha = 0.0;
 
   stereoRectify(K1, D1, K2, D2, 
@@ -64,88 +75,99 @@ void init_rectification_map(FileStorage& config_file)
   fisheye::initUndistortRectifyMap(K1, D1, R1, P1, output_img_size, CV_32FC1, lmapx, lmapy);
   fisheye::initUndistortRectifyMap(K2, D2, R2, P2, output_img_size, CV_32FC1, rmapx, rmapy);
 
+  output_camera_info_left.width = size_output[0];
+  output_camera_info_left.height = size_output[1];
+  output_camera_info_left.D = vector<double>(5, 0);
+
+  output_camera_info_right.width = size_output[0];
+  output_camera_info_right.height = size_output[1];
+  output_camera_info_right.D = vector<double>(5, 0);
+  
+  for (int i = 0; i < 9; i++)
+  {
+    output_camera_info_left.K[i] = K1.at<double>(i);
+    output_camera_info_right.K[i] = K2.at<double>(i);
+    output_camera_info_left.R[i] = R1.at<double>(i);
+    output_camera_info_right.R[i] = R2.at<double>(i);
+  }  
+  for (int i = 0; i < 12; i++)
+  {
+    output_camera_info_left.P[i] = P1.at<double>(i);
+    output_camera_info_right.P[i] = P2.at<double>(i);
+  }
+  
   ROS_INFO("Initialization for rectification mapping complete. Publishing rectified images when raw images arrive.");
 }
 
-// This callback function takes a raw stereo (left) image as input, 
-// then it undistorts and rectifies the image using the void undistortRectifyImage
-// function defined above and publishes on the rectified image topic using pub_img_left.
-// Similarly img_raw_callback_right is defined for the right stereo image.
-void img_raw_callback_left(const sensor_msgs::ImageConstPtr& msg)
+// This callback function takes a pair of raw stereo images as inputs, 
+// then undistorts and rectifies the images using the undistort_rectify_image function 
+// defined above and publishes on the rectified image topic using pub_img_left/right.
+void synched_img_callback(const sensor_msgs::ImageConstPtr& msg_left, const sensor_msgs::ImageConstPtr& msg_right)
 {
-  try
-  {
-    Mat tmp = cv_bridge::toCvShare(msg, "bgr8")->image;
+    Mat tmp_left = cv_bridge::toCvShare(msg_left, "bgr8")->image;
+    Mat tmp_right = cv_bridge::toCvShare(msg_right, "bgr8")->image;
 
-    if (tmp.empty())
-    {
-      ROS_ERROR("Could not convert left image msg to OpenCV-compatible CvImage");
-      return;
-    }
+    Mat dst_left, dst_right;
 
-    Mat dst;
+    undistort_rectify_image(tmp_left, dst_left, CameraSide::LEFT);
+    undistort_rectify_image(tmp_right, dst_right, CameraSide::RIGHT);
 
-    undistortRectifyImage(tmp, dst, 1);
+    sensor_msgs::ImagePtr rect_img_left = cv_bridge::CvImage(msg_left->header, "bgr8", dst_left).toImageMsg();
+    sensor_msgs::ImagePtr rect_img_right = cv_bridge::CvImage(msg_right->header, "bgr8", dst_right).toImageMsg();
 
-    sensor_msgs::ImagePtr rect_left_img = cv_bridge::CvImage(msg->header, "bgr8", dst).toImageMsg();
+    pub_img_rect_left.publish(rect_img_left);
+    pub_img_rect_right.publish(rect_img_right);
 
-    pub_img_rect_left.publish(rect_left_img);
-  }
-  catch (cv_bridge::Exception& e)
-  {
-    ROS_ERROR("Error when trying to rectify left images: %s", e.what());
-  }
+    std_msgs::Header header = msg_left->header;
+    output_camera_info_left.header = header;
+    output_camera_info_right.header = header;
+
+    left_camera_info_output_pub.publish(output_camera_info_left);
+    right_camera_info_output_pub.publish(output_camera_info_right);
 }
 
-// Similar to img_raw_callback_left, but for the right stereo image.
-void img_raw_callback_right(const sensor_msgs::ImageConstPtr& msg)
-{
-  try
-  {
-    Mat tmp = cv_bridge::toCvShare(msg, "bgr8")->image;
-
-    if (tmp.empty())
-    {
-      ROS_ERROR("Could not convert right image msg to OpenCV-compatible CvImage");
-      return;
-    }
-
-    Mat dst;
-
-    undistortRectifyImage(tmp, dst, 2);
-
-    sensor_msgs::ImagePtr rect_right_img = cv_bridge::CvImage(msg->header, "bgr8", dst).toImageMsg();
-
-    pub_img_rect_right.publish(rect_right_img);
-  }
-  catch (cv_bridge::Exception& e)
-  {
-    ROS_ERROR("Error when trying to rectify right images: %s", e.what());
-  }
-}
-
-// The stereo calibration information is read into config_file. 
+// The stereo calibration information is read from yaml parameter file. 
 // sub_img_raw_left/right subscribes to the topics publishing the raw stereo image data,
 // subsequently rectify and publish output images.
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "t265_fisheye_undistort");
 
-  ros::NodeHandle nh;
+  ros::NodeHandle nh("~");
 
-  image_transport::ImageTransport it(nh);
+  string param_file_path;
+  if(nh.getParam("param_file_path", param_file_path))
+  {
+    ROS_WARN("Using parameter file: %s", param_file_path.c_str());
+  }
+  else
+  {
+    ROS_ERROR("Failed to get param file path. Exit.");
+    ros::shutdown();
+    return 0;
+  }
 
   // Read the input parameters
-  config_file = FileStorage(argv[1], FileStorage::READ);
-  init_rectification_map(config_file);
-
+  init_rectification_map(param_file_path);
+  
   // The raw stereo images should be published by a node which publishes messages of the type sensor_msgs/Image
-  image_transport::Subscriber sub_img_raw_left  = it.subscribe("/t265/fisheye1/image_raw", 1, img_raw_callback_left);
-  image_transport::Subscriber sub_img_raw_right = it.subscribe("/t265/fisheye2/image_raw", 1, img_raw_callback_right);
+  image_transport::ImageTransport it(nh);
+  message_filters::Subscriber<sensor_msgs::Image> sub_img_left(nh, "/t265/fisheye1/image_raw", 1);
+  message_filters::Subscriber<sensor_msgs::Image> sub_img_right(nh, "/t265/fisheye2/image_raw", 1);
+  
+  // Having time synced stereo images is important for generating accurate disparity maps. 
+  // To sync the left and right image messages by their header time stamps, ApproximateTime is used.
+  // See here: http://wiki.ros.org/message_filters#Time_Synchronizer
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> SyncPolicy;
+  message_filters::Synchronizer<SyncPolicy> sync(SyncPolicy(10), sub_img_left, sub_img_right);
+  sync.registerCallback(boost::bind(&synched_img_callback, _1, _2));
 
-  // The rectified output images are published to the following topics:
-  pub_img_rect_left  = it.advertise("/t265_rect/image_left",  1);
-  pub_img_rect_right = it.advertise("/t265_rect/image_right", 1);
+  // The rectified output images are published to the following topics (default):
+  pub_img_rect_left  = it.advertise("/t265/rect/first/image",  1);
+  pub_img_rect_right = it.advertise("/t265/rect/second/image", 1);
+
+  left_camera_info_output_pub = nh.advertise<sensor_msgs::CameraInfo>("/t265/rect/first/camera_info", 1);
+  right_camera_info_output_pub = nh.advertise<sensor_msgs::CameraInfo>("/t265/rect/second/camera_info", 1);
 
   ros::spin();
 }

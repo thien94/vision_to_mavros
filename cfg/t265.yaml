@@ -1,4 +1,9 @@
 %YAML:1.0
+# Input-output configuration
+input: [848, 800]
+output: [800, 800]
+
+# Camera calibration parameter
 K1: !!opencv-matrix
    rows: 3
    cols: 3
