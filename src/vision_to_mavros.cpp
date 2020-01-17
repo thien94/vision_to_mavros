@@ -109,7 +109,7 @@ int main(int argc, char** argv)
 
   ros::Time last_tf_time = ros::Time::now();
 
-  // Limited the rate of publishing data, otherwise the other telemetry port might be flooded
+  // Limit the rate of publishing data, otherwise the other telemetry port might be flooded
   ros::Rate rate(output_rate);
 
   while (node.ok())
