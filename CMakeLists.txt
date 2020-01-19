@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   std_msgs
   image_transport
+  mavros_msgs
 )
 
 find_package(OpenCV REQUIRED COMPONENTS core calib3d)
