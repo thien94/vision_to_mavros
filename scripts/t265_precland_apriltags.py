@@ -246,8 +246,8 @@ def fisheye_distortion(intrinsics):
 #######################################
 # Functions for AprilTag detection
 #######################################
-tag_landing_id = 0
-tag_landing_size = 0.144            # tag's border size, measured in meter
+tag_landing_id = 1
+tag_landing_size = 0.344            # tag's border size, measured in meter
 tag_image_source = "right"   # for Realsense T265, we can use "left" or "right"
 
 at_detector = apriltags3.Detector(searchpath=['apriltags'],
@@ -272,12 +272,12 @@ def send_land_target_message():
         x_offset_rad = m.atan(H_camera_tag[0][3] / H_camera_tag[2][3])
         y_offset_rad = m.atan(H_camera_tag[1][3] / H_camera_tag[2][3])
         msg = vehicle.message_factory.landing_target_encode(
-        current_time,                           # time target data was processed, as close to sensor capture as possible
+            current_time,                       # time target data was processed, as close to sensor capture as possible
             0,                                  # target num, not used
             mavutil.mavlink.MAV_FRAME_BODY_NED, # frame, not used
             x_offset_rad,                       # X-axis angular offset, in radians
             y_offset_rad,                       # Y-axis angular offset, in radians
-            H_camera_tag[2][3],                # distance, in meters
+            H_camera_tag[2][3],                 # distance, in meters
             0,                                  # Target x-axis size, in radians
             0,                                  # Target y-axis size, in radians
             0,                                  # x	float	X Position of the landing target on MAV_FRAME

@@ -1,13 +1,9 @@
 <launch>
-    <!-- This node provides ROS interface with Realsense T265 camera  -->
-    <include file="$(find realsense2_camera)/launch/rs_t265.launch"/>
+    <!-- This node will rectify fisheye images obtained from the Realsense T265 camera (realsense-ros) -->
 
-    <!-- This node will undistort fisheye images obtained from the Realsense T265 camera (realsense-ros) -->
     <arg name="param_file_path" default="$(find vision_to_mavros)/cfg/t265.yaml"/>
     <node pkg="vision_to_mavros" name="t265_fisheye_undistort" type="t265_fisheye_undistort_node" output="screen">
         <param name="param_file_path" value="$(arg param_file_path)" /> 
     </node>
     
-    <!-- This node provides AprilTag ROS wrapper -->
-    <include file="$(find apriltag_ros)/launch/t265_single.launch"/> 
 </launch>

@@ -137,7 +137,7 @@ void synched_img_callback(const sensor_msgs::ImageConstPtr& msg_left, const sens
 
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "t265_fisheye_undistort");
+  ros::init(argc, argv, "camera_fisheye_undistort");
 
   ros::NodeHandle nh("~");
 
@@ -158,8 +158,8 @@ int main(int argc, char **argv)
 
   // The raw stereo images should be published as type sensor_msgs/Image
   image_transport::ImageTransport it(nh);
-  message_filters::Subscriber<sensor_msgs::Image> sub_img_left(nh, "/t265/fisheye1/image_raw", 1);
-  message_filters::Subscriber<sensor_msgs::Image> sub_img_right(nh, "/t265/fisheye2/image_raw", 1);
+  message_filters::Subscriber<sensor_msgs::Image> sub_img_left(nh, "/camera/fisheye1/image_raw", 1);
+  message_filters::Subscriber<sensor_msgs::Image> sub_img_right(nh, "/camera/fisheye2/image_raw", 1);
   
   // Having time synced stereo images might be important for other purposes, say generating accurate disparity maps. 
   // To sync the left and right image messages by their header time stamps, ApproximateTime is used.
@@ -169,11 +169,11 @@ int main(int argc, char **argv)
   sync.registerCallback(boost::bind(&synched_img_callback, _1, _2));
 
   // The output data include rectified images and their corresponding camera info
-  pub_img_rect_left  = it.advertise("/t265/rect/first/image",  1);
-  pub_img_rect_right = it.advertise("/t265/rect/second/image", 1);
+  pub_img_rect_left  = it.advertise("/camera/fisheye1/rect/image",  1);
+  pub_img_rect_right = it.advertise("/camera/fisheye2/rect/image", 1);
 
-  left_camera_info_output_pub = nh.advertise<sensor_msgs::CameraInfo>("/t265/rect/first/camera_info", 1);
-  right_camera_info_output_pub = nh.advertise<sensor_msgs::CameraInfo>("/t265/rect/second/camera_info", 1);
+  left_camera_info_output_pub = nh.advertise<sensor_msgs::CameraInfo>("/camera/fisheye1/rect/camera_info", 1);
+  right_camera_info_output_pub = nh.advertise<sensor_msgs::CameraInfo>("/camera/fisheye2/rect/camera_info", 1);
 
   // Processing start
   ros::spin();
