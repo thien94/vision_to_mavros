@@ -1,0 +1,16 @@
+<launch>
+    <!-- This node will launch the ROS driver for Realsense T265 -->
+    <include file="$(find realsense2_camera)/launch/rs_t265.launch"/>
+
+    <!-- This node will launch MAVROS -->
+    <include file="$(find mavros)/launch/apm.launch"/>
+
+    <!-- This node will provide the bridge between realsense-ros and MAVROS for vision_pose_estimate messages-->
+    <include file="$(find vision_to_mavros)/launch/t265_downfacing_tf_to_mavros.launch"/>
+
+    <!-- This node will rectify fisheye images obtained from the Realsense T265 camera (realsense-ros) -->
+    <include file="$(find vision_to_mavros)/launch/t265_fisheye_undistort.launch"/>
+    
+    <!-- This node provides AprilTag ROS wrapper -->
+    <include file="$(find apriltag_ros)/launch/continuous_detection.launch"/> 
+</launch>
