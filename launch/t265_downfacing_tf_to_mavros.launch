@@ -12,6 +12,12 @@
     <arg name="enable_precland"     default="true" />
     <param name="enable_precland"   value="$(arg enable_precland)" />
 
+    <arg name="precland_target_frame_id"     default="/landing_target" />
+    <param name="precland_target_frame_id"   value="$(arg precland_target_frame_id)" />
+
+    <arg name="precland_camera_frame_id"     default="/camera_fisheye2_optical_frame" />
+    <param name="precland_camera_frame_id"   value="$(arg precland_camera_frame_id)" />
+
     <!-- Two steps alignment: 
     1) r,p,y: align current camera frame with default camera frame (x forward, y left, z up)
     2) gamma: align default camera frame's x axis with world y axis
@@ -24,6 +30,8 @@
         Downfacing, USB port to the left  :       r = 3.1415926,  p = -1.5707963, y = 0,  gamma = -1.5707963
         Downfacing, USB port to the back  :       r = -1.5707963, p = -1.5707963, y = 0,  gamma = -1.5707963          
         Downfacing, USB port to the front :       r = 1.5707963,  p = -1.5707963, y = 0,  gamma = -1.5707963
+
+    Default for this launch file: downfacing, USB port to the right
     -->
     <param name="roll_cam"          value="0" />
     <param name="pitch_cam"         value="-1.5707963" />

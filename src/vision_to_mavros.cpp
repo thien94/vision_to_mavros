@@ -113,18 +113,45 @@ int main(int argc, char** argv)
   // Variables for precision landing (optional)
   //////////////////////////////////////////////////
   bool enable_precland = false;
+
+  std::string precland_target_frame_id = "/landing_target";
+
+  std::string precland_camera_frame_id = "/camera_fisheye2_optical_frame";
+
+  ros::Publisher precland_msg_publisher;
+
   if(node.getParam("enable_precland", enable_precland))
   {
     ROS_INFO("Precision landing: %s", enable_precland ? "enabled" : "disabled");
   }
+  else
+  {
+    ROS_INFO("Precision landing disabled by default");
+  }
 
-  std::string precland_target_frame = "/landing_target";
+  if (enable_precland)
+  {
+    // The frame of the landing target in the camera frame
+    if(node.getParam("precland_target_frame_id", precland_target_frame_id))
+    {
+      ROS_INFO("Get precland_target_frame_id parameter: %s", precland_target_frame_id.c_str());
+    }
+    else
+    {
+      ROS_WARN("Using default precland_target_frame_id: %s", precland_target_frame_id.c_str());
+    }
 
-  std::string precland_camera_frame = "/camera_fisheye2_optical_frame";
+    if(node.getParam("precland_camera_frame_id", precland_camera_frame_id))
+    {
+      ROS_INFO("Get precland_camera_frame_id parameter: %s", precland_camera_frame_id.c_str());
+    }
+    else
+    {
+      ROS_WARN("Using default precland_camera_frame_id: %s", precland_camera_frame_id.c_str());
+    }
 
-  mavros_msgs::LandingTarget msg_landing_target;
-
-  ros::Publisher precland_msg_publisher = node.advertise<mavros_msgs::LandingTarget>("landing_raw", 10);
+    precland_msg_publisher = node.advertise<mavros_msgs::LandingTarget>("landing_raw", 10);
+  }
 
   //////////////////////////////////////////////////
   // Wait for the first transform to become available.
@@ -211,32 +238,37 @@ int main(int argc, char** argv)
     //////////////////////////////////////////////////
     // Publish landing_target message if option is enabled and transform is available 
     //////////////////////////////////////////////////
-    if (enable_precland && tf_listener.canTransform(precland_camera_frame, precland_target_frame, now))
+    if (enable_precland)
     {
-      // lookupTransform(frame_2, frame_1, at_this_time, this_transform)
-      //    will give the transfrom from frame_1 to frame_2
-      tf_listener.lookupTransform(precland_camera_frame, precland_target_frame, now, transform);
-
-      // Only publish when we have new data
-      if (last_precland_tf_time < transform.stamp_)
+      if (tf_listener.canTransform(precland_camera_frame_id, precland_target_frame_id, now))
       {
-        last_precland_tf_time = transform.stamp_;
+        // lookupTransform(frame_2, frame_1, at_this_time, this_transform)
+        //    will give the transfrom from frame_1 to frame_2
+        tf_listener.lookupTransform(precland_camera_frame_id, precland_target_frame_id, now, transform);
 
-        // Setup the landing target message
-        msg_landing_target.header.frame_id = transform.frame_id_;
-        msg_landing_target.header.stamp = transform.stamp_;
-        msg_landing_target.target_num = 0;
-        msg_landing_target.frame = mavros_msgs::LandingTarget::LOCAL_NED;
-        msg_landing_target.type = mavros_msgs::LandingTarget::VISION_FIDUCIAL;
+        // Only publish when we have new data
+        if (last_precland_tf_time < transform.stamp_)
+        {
+          last_precland_tf_time = transform.stamp_;
 
-        msg_landing_target.angle[0] = std::atan(transform.getOrigin().getX() / transform.getOrigin().getZ());
-        msg_landing_target.angle[1] = std::atan(transform.getOrigin().getY() / transform.getOrigin().getZ());
-        msg_landing_target.distance = transform.getOrigin().length();
+          mavros_msgs::LandingTarget msg_landing_target;
 
-        // Publish the message
-        precland_msg_publisher.publish(msg_landing_target);
+          // Setup the landing target message
+          msg_landing_target.header.frame_id = transform.frame_id_;
+          msg_landing_target.header.stamp = transform.stamp_;
+          msg_landing_target.target_num = 0;
+          msg_landing_target.frame = mavros_msgs::LandingTarget::LOCAL_NED;
+          msg_landing_target.type = mavros_msgs::LandingTarget::VISION_FIDUCIAL;
 
-        ROS_INFO("Landing target detected");
+          msg_landing_target.angle[0] = std::atan(transform.getOrigin().getX() / transform.getOrigin().getZ());
+          msg_landing_target.angle[1] = std::atan(transform.getOrigin().getY() / transform.getOrigin().getZ());
+          msg_landing_target.distance = transform.getOrigin().length();
+
+          // Publish the message
+          precland_msg_publisher.publish(msg_landing_target);
+
+          ROS_INFO("Landing target detected");
+        }
       }
     }
 
