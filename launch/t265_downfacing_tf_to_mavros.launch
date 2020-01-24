@@ -1,13 +1,16 @@
 <launch>
 
     <!-- This node will launch frame conversion from vision pose (tf) to mavros pose -->
-    <arg name="target_frame_id"   default="/camera_odom_frame" />
+    <arg name="target_frame_id"     default="/camera_odom_frame" />
     <param name="target_frame_id"   value="$(arg target_frame_id)" />
 
-    <arg name="source_frame_id"   default="/camera_link" />
+    <arg name="source_frame_id"     default="/camera_link" />
     <param name="source_frame_id"   value="$(arg source_frame_id)" />
 
-    <param name="output_rate"       value="30" />
+    <param name="output_rate"       value="20" />
+      
+    <arg name="enable_precland"     default="true" />
+    <param name="enable_precland"   value="$(arg enable_precland)" />
 
     <!-- Two steps alignment: 
     1) r,p,y: align current camera frame with default camera frame (x forward, y left, z up)
@@ -23,11 +26,12 @@
         Downfacing, USB port to the front :       r = 1.5707963,  p = -1.5707963, y = 0,  gamma = -1.5707963
     -->
     <param name="roll_cam"          value="0" />
-    <param name="pitch_cam"         value="0" />
+    <param name="pitch_cam"         value="-1.5707963" />
     <param name="yaw_cam"           value="0" />
     <param name="gamma_world"       value="-1.5707963" />
 
     <node pkg="vision_to_mavros" type="vision_to_mavros_node" name="t265_to_mavros" output="screen" >
         <remap from="vision_pose" to="/mavros/vision_pose/pose" />
+        <remap from="landing_raw" to="/mavros/landing_target/raw" />
     </node>
 </launch>

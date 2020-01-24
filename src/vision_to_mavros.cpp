@@ -1,17 +1,22 @@
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
 #include <tf/transform_broadcaster.h>
+#include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/Path.h>
+#include <mavros_msgs/LandingTarget.h>
 
 #include <string.h>
 
-int main(int argc, char** argv){
-
+int main(int argc, char** argv)
+{
   ros::init(argc, argv, "vision_to_mavros");
 
   ros::NodeHandle node;
   
+  //////////////////////////////////////////////////
+  // Variables for precision navigation
+  //////////////////////////////////////////////////
   ros::Publisher camera_pose_publisher = node.advertise<geometry_msgs::PoseStamped>("vision_pose", 10);
 
   ros::Publisher body_path_pubisher = node.advertise<nav_msgs::Path>("body_frame/path", 1);
@@ -28,7 +33,7 @@ int main(int argc, char** argv){
 
   std::string source_frame_id = "/camera_link";
 
-  double output_rate = 30, roll_cam = 0, pitch_cam = 0, yaw_cam = 1.5707963, gamma_world = -1.5707963;
+  double output_rate = 20, roll_cam = 0, pitch_cam = 0, yaw_cam = 1.5707963, gamma_world = -1.5707963;
 
   // Read parameters from launch file, including: target_frame_id, source_frame_id, output_rate
   {
@@ -104,21 +109,44 @@ int main(int argc, char** argv){
     }
   }
 
-  // Wait for the first transform to become available. 
+  //////////////////////////////////////////////////
+  // Variables for precision landing (optional)
+  //////////////////////////////////////////////////
+  bool enable_precland = false;
+  if(node.getParam("enable_precland", enable_precland))
+  {
+    ROS_INFO("Precision landing: %s", enable_precland ? "enabled" : "disabled");
+  }
+
+  std::string precland_target_frame = "/landing_target";
+
+  std::string precland_camera_frame = "/camera_fisheye2_optical_frame";
+
+  mavros_msgs::LandingTarget msg_landing_target;
+
+  ros::Publisher precland_msg_publisher = node.advertise<mavros_msgs::LandingTarget>("landing_raw", 10);
+
+  //////////////////////////////////////////////////
+  // Wait for the first transform to become available.
+  //////////////////////////////////////////////////
   tf_listener.waitForTransform(target_frame_id, source_frame_id, ros::Time::now(), ros::Duration(3.0));
 
   ros::Time last_tf_time = ros::Time::now();
+  ros::Time last_precland_tf_time = ros::Time::now();
 
-  // Limited the rate of publishing data, otherwise the other telemetry port might be flooded
+  // Limit the rate of publishing data, otherwise the other telemetry port might be flooded
   ros::Rate rate(output_rate);
 
   while (node.ok())
   {
+    // For tf, Time(0) means "the latest available" transform in the buffer.
+    ros::Time now = ros::Time(0);
+
+    //////////////////////////////////////////////////
+    // Publish vision_pose_estimate message if transform is available
+    //////////////////////////////////////////////////
     try
     {
-      // For tf, Time(0) means "the latest available" transform in the buffer.
-      ros::Time now = ros::Time(0);
-
       // lookupTransform(frame_2, frame_1, at_this_time, this_transform)
       //    will give the transfrom from frame_1 to frame_2
       tf_listener.lookupTransform(target_frame_id, source_frame_id, now, transform);
@@ -176,10 +204,43 @@ int main(int argc, char** argv){
     }
     catch (tf::TransformException ex)
     {
-        ROS_WARN("%s",ex.what());
-        ros::Duration(1.0).sleep();
+      ROS_WARN("%s",ex.what());
+      ros::Duration(1.0).sleep();
     }
 
+    //////////////////////////////////////////////////
+    // Publish landing_target message if option is enabled and transform is available 
+    //////////////////////////////////////////////////
+    if (enable_precland && tf_listener.canTransform(precland_camera_frame, precland_target_frame, now))
+    {
+      // lookupTransform(frame_2, frame_1, at_this_time, this_transform)
+      //    will give the transfrom from frame_1 to frame_2
+      tf_listener.lookupTransform(precland_camera_frame, precland_target_frame, now, transform);
+
+      // Only publish when we have new data
+      if (last_precland_tf_time < transform.stamp_)
+      {
+        last_precland_tf_time = transform.stamp_;
+
+        // Setup the landing target message
+        msg_landing_target.header.frame_id = transform.frame_id_;
+        msg_landing_target.header.stamp = transform.stamp_;
+        msg_landing_target.target_num = 0;
+        msg_landing_target.frame = mavros_msgs::LandingTarget::LOCAL_NED;
+        msg_landing_target.type = mavros_msgs::LandingTarget::VISION_FIDUCIAL;
+
+        msg_landing_target.angle[0] = std::atan(transform.getOrigin().getX() / transform.getOrigin().getZ());
+        msg_landing_target.angle[1] = std::atan(transform.getOrigin().getY() / transform.getOrigin().getZ());
+        msg_landing_target.distance = transform.getOrigin().length();
+
+        // Publish the message
+        precland_msg_publisher.publish(msg_landing_target);
+
+        ROS_INFO("Landing target detected");
+      }
+    }
+
+    // Repeat
     rate.sleep();
   }
   return 0;

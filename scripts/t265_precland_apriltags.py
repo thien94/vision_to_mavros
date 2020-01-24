@@ -269,15 +269,21 @@ def send_land_target_message():
     global current_time, H_camera_tag, is_landing_tag_detected
 
     if is_landing_tag_detected == True:
-        x_offset_rad = m.atan(H_camera_tag[0][3] / H_camera_tag[2][3])
-        y_offset_rad = m.atan(H_camera_tag[1][3] / H_camera_tag[2][3])
+        x = H_camera_tag[0][3]
+        y = H_camera_tag[1][3]
+        z = H_camera_tag[2][3]
+
+        x_offset_rad = m.atan(x / z)
+        y_offset_rad = m.atan(y / z)
+        distance = np.sqrt(x * x + y * y + z * z)
+
         msg = vehicle.message_factory.landing_target_encode(
-        current_time,                           # time target data was processed, as close to sensor capture as possible
+            current_time,                       # time target data was processed, as close to sensor capture as possible
             0,                                  # target num, not used
             mavutil.mavlink.MAV_FRAME_BODY_NED, # frame, not used
             x_offset_rad,                       # X-axis angular offset, in radians
             y_offset_rad,                       # Y-axis angular offset, in radians
-            H_camera_tag[2][3],                # distance, in meters
+            distance,                           # distance, in meters
             0,                                  # Target x-axis size, in radians
             0,                                  # Target y-axis size, in radians
             0,                                  # x	float	X Position of the landing target on MAV_FRAME

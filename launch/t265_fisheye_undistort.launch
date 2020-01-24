@@ -1,0 +1,9 @@
+<launch>
+    <!-- This node will rectify fisheye images obtained from the Realsense T265 camera (realsense-ros) -->
+
+    <arg name="param_file_path" default="$(find vision_to_mavros)/cfg/t265.yaml"/>
+    <node pkg="vision_to_mavros" name="t265_fisheye_undistort" type="t265_fisheye_undistort_node" output="screen">
+        <param name="param_file_path" value="$(arg param_file_path)" /> 
+    </node>
+    
+</launch>

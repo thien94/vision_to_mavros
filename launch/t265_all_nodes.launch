@@ -10,5 +10,4 @@
 
     <!-- This node will launch the node that bridges realsense-ros and MAVROS -->
     <include file="$(find vision_to_mavros)/launch/t265_tf_to_mavros.launch"/>
-
 </launch>
