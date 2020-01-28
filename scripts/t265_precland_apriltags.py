@@ -696,9 +696,6 @@ try:
             # print("INFO: No tag detected")
             is_landing_tag_detected = False
 
-        if debug_enable == 1:
-            print("INFO: distances from left to right: ", distances[0], distances[20], int(np.mean(distances[33:38])), distances[60], distances[71])
-
         # If enabled, display tag-detected image in a pop-up window, required a monitor to be connected
         if visualization == 1:
             # Create color image from source
