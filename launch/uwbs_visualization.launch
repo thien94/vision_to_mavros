@@ -1,0 +1,53 @@
+<launch>
+
+    <arg name="target_frame_id"   default="/map" />
+    <param name="target_frame_id"   value="$(arg target_frame_id)" />
+
+    <arg name="source_frame_id"   default="/leica_rel" />
+    <param name="source_frame_id"   value="$(arg source_frame_id)" />
+
+    <arg name="output_frame_id"   default="/vicon" />
+    <param name="output_frame_id"   value="$(arg output_frame_id)" />
+
+    <!-- This node will launch frame conversion from some frame (tf) to a new frame -->
+    <node pkg="vision_to_mavros" type="vision_to_mavros_node" name="uwbs_rviz" output="screen" >
+        <param name="output_rate" value="30" />
+    </node>
+
+    <!-- Visualization -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find uwb_orb_slam2_ros)/ros/config/rviz_config.rviz" output="screen" />
+
+    <!-- <node pkg="hector_trajectory_server" type="hector_trajectory_server" name="trajectory_server_vicon" output="screen" ns="vicon" >
+        <param name="/target_frame_name" value="/map" />
+        <param name="/source_frame_name" value="/vicon/nuc/nuc" />
+        <param name="/trajectory_update_rate" value="20.0" />
+        <param name="/trajectory_publish_rate" value="20.0" />
+    </node> -->
+
+    <node pkg="hector_trajectory_server" type="hector_trajectory_server" name="trajectory_server_leica" output="screen" ns="leica" >
+        <param name="/target_frame_name" value="/map" />
+        <param name="/source_frame_name" value="$(arg output_frame_id)" />
+        <param name="/trajectory_update_rate" value="20.0" />
+        <param name="/trajectory_publish_rate" value="20.0" />
+    </node>
+
+    <node pkg="hector_trajectory_server" type="hector_trajectory_server" name="trajectory_server_uwbs" output="screen" ns="uwbs" >
+        <param name="/target_frame_name" value="/map" />
+        <param name="/source_frame_name" value="/camera_link" />
+        <param name="/trajectory_update_rate" value="20.0" />
+        <param name="/trajectory_publish_rate" value="20.0" />
+    </node>
+
+    <!-- <node pkg="hector_trajectory_server" type="hector_trajectory_server" name="trajectory_server_t265" output="screen" ns="t265" >
+        <param name="/target_frame_name" value="/map" />
+        <param name="/source_frame_name" value="/t265_pose_frame" />
+        <param name="/trajectory_update_rate" value="20.0" />
+        <param name="/trajectory_publish_rate" value="20.0" />
+    </node> -->
+
+    <node name="rviz_cinematographer_gui" pkg="rqt_gui" type="rqt_gui" output="screen" args="-s rviz_cinematographer_gui/RvizCinematographerGUI">
+        <rosparam command="load" file="$(find rviz_cinematographer_gui)/trajectories/uwbs_V101_trajectory.yaml"/>
+        <param name="start_recorder" value="true"/>
+    </node>
+
+</launch>
