@@ -27,6 +27,7 @@ import time
 import argparse
 import threading
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler import events
 
 from dronekit import connect, VehicleMode
 from pymavlink import mavutil
@@ -177,7 +178,7 @@ else:
 
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
 def send_vision_position_message():
-    global current_time, H_aeroRef_aeroBody
+    global current_time, last_vision_msg_time, num_vision_msg_sent, H_aeroRef_aeroBody
 
     if H_aeroRef_aeroBody is not None:
         rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
@@ -194,6 +195,9 @@ def send_vision_position_message():
 
         vehicle.send_mavlink(msg)
         vehicle.flush()
+    print("INFO: Elapsed time for msg #", num_vision_msg_sent, "is", "{:.2f}".format(1000 * (time.time() - last_vision_msg_time)), "ms")
+    last_vision_msg_time = time.time()
+    num_vision_msg_sent = num_vision_msg_sent + 1
 
 # For a lack of a dedicated message, we pack the confidence level into a message that will not be used, so we can view it on GCS
 # Confidence level value: 0 - 3, remapped to 0 - 100: 0% - Failed / 33.3% - Low / 66.6% - Medium / 100% - High 
@@ -329,7 +333,14 @@ def scale_update():
     global scale_factor
     while True:
         scale_factor = float(input("INFO: Type in new scale as float number\n"))
-        print("INFO: New scale is ", scale_factor)  
+        print("INFO: New scale is ", scale_factor)
+
+# Monitor the scheduler event, useful for debugging timing-related issues
+def sched_listener(event):
+    if event.exception:
+        print('The job crashed :(')
+    # else:
+    #     print('The job worked :)')
 
 #######################################
 # Main code starts here
@@ -362,6 +373,8 @@ sched = BackgroundScheduler()
 sched.add_job(send_vision_position_message, 'interval', seconds = 1/vision_msg_hz)
 sched.add_job(send_confidence_level_dummy_message, 'interval', seconds = 1/confidence_msg_hz)
 
+sched.add_listener(sched_listener, events.EVENT_JOB_MISSED | events.EVENT_JOB_ERROR)
+
 # For scale calibration, we will use a thread to monitor user input
 if scale_calib_enable == True:
     scale_update_thread = threading.Thread(target=scale_update)
@@ -369,6 +382,8 @@ if scale_calib_enable == True:
     scale_update_thread.start()
 
 sched.start()
+last_vision_msg_time = time.time()
+num_vision_msg_sent = 0
 
 if compass_enabled == 1:
     # Wait a short while for yaw to be correctly initiated
