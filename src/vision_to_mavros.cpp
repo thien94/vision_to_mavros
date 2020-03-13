@@ -149,11 +149,37 @@ int main(int argc, char** argv)
         // static tf::Vector3 position_offset (-1.549, 4.739, -1.273);
 
         // // For anchor_at_leica_V101
+        // static tf::Matrix3x3 rot_mat (
+        //    0.903,  0.206, -0.376,
+        //   -0.234,  0.972, -0.03 ,
+        //    0.36 ,  0.116,  0.926);
+        // static tf::Vector3 position_offset (-0.843, -1.992, -1.596);
+
+        // // For SC01/HH01
+        // static tf::Matrix3x3 rot_mat (
+        //    0.997,  0.083, -0.011,
+        //   -0.083,  0.996,  0.021,
+        //    0.012, -0.02 ,  1.   );
+        // static tf::Vector3 position_offset (-0.043, -0.032, 0.256);
+
+        // // For SC04/HH06
+        // static tf::Matrix3x3 rot_mat (
+        //    0.993,  0.107,  0.051,
+        //   -0.106,  0.994, -0.012,
+        //   -0.052,  0.007,  0.999);
+        // static tf::Vector3 position_offset (0.012, -0.14, 0.461);
+
+        // // For AuRO/MH02
         static tf::Matrix3x3 rot_mat (
-           0.903,  0.206, -0.376,
-          -0.234,  0.972, -0.03 ,
-           0.36 ,  0.116,  0.926);
-        static tf::Vector3 position_offset (-0.843, -1.992, -1.596);
+        -0.925,  0.045, -0.376,
+        -0.045, -0.999, -0.009,
+        -0.376,  0.008,  0.926);
+        static tf::Vector3 position_offset (4.595,-1.418, 1.07);
+
+        // Ground truth for anchor position
+        static tf::Vector3 true_anchor_position (0, 0, 0);
+        static tf::Vector3 aligned_true_anchor_position = rot_mat * true_anchor_position + position_offset;
+
 
         // 1) Rotation from original world frame to world frame with y forward.
         // 2) Rotation from camera to body frame.
@@ -175,6 +201,14 @@ int main(int argc, char** argv)
           last_tf_time,
           "map",
           output_frame_id));
+
+        tf_aligned_ground_truth.setIdentity();
+        tf_aligned_ground_truth.setOrigin(aligned_true_anchor_position);
+        br.sendTransform(tf::StampedTransform(
+          tf_aligned_ground_truth,
+          last_tf_time,
+          "map",
+          "anchor100"));
         
         // To-do: test fixed length path publisher
         // msg_body_pose.header.stamp = transform.stamp_;
