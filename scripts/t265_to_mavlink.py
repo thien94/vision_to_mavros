@@ -26,6 +26,7 @@ import math as m
 import time
 import argparse
 import threading
+from time import sleep
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from dronekit import connect, VehicleMode
@@ -38,6 +39,7 @@ from pymavlink import mavutil
 # Default configurations for connection to the FCU
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
+connection_timeout_sec_default = 5
 vision_msg_hz_default = 30
 confidence_msg_hz_default = 1
 camera_orientation_default = 0
@@ -60,6 +62,7 @@ home_lon = 16624301        # Somewhere in Africa
 home_alt = 163000 
 
 vehicle = None
+is_vehicle_connected = False
 pipe = None
 
 # pose data confidence: 0x0 - Failed / 0x1 - Low / 0x2 - Medium / 0x3 - High 
@@ -193,9 +196,9 @@ else:
 
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
 def send_vision_position_message():
-    global current_time, H_aeroRef_aeroBody
+    global is_vehicle_connected, current_time, H_aeroRef_aeroBody
 
-    if H_aeroRef_aeroBody is not None:
+    if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
         rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
 
         msg = vehicle.message_factory.vision_position_estimate_encode(
@@ -214,8 +217,8 @@ def send_vision_position_message():
 # For a lack of a dedicated message, we pack the confidence level into a message that will not be used, so we can view it on GCS
 # Confidence level value: 0 - 3, remapped to 0 - 100: 0% - Failed / 33.3% - Low / 66.6% - Medium / 100% - High 
 def send_confidence_level_dummy_message():
-    global data, current_confidence
-    if data is not None:
+    global is_vehicle_connected, data, current_confidence
+    if is_vehicle_connected == True and data is not None:
         # Show confidence level on terminal
         print("INFO: Tracking confidence: ", pose_data_confidence_level[data.tracker_confidence])
 
@@ -244,43 +247,45 @@ def send_confidence_level_dummy_message():
 
 # Send a mavlink SET_GPS_GLOBAL_ORIGIN message (http://mavlink.org/messages/common#SET_GPS_GLOBAL_ORIGIN), which allows us to use local position information without a GPS.
 def set_default_global_origin():
-    msg = vehicle.message_factory.set_gps_global_origin_encode(
-        int(vehicle._master.source_system),
-        home_lat, 
-        home_lon,
-        home_alt
-    )
+    if  is_vehicle_connected == True:
+        msg = vehicle.message_factory.set_gps_global_origin_encode(
+            int(vehicle._master.source_system),
+            home_lat, 
+            home_lon,
+            home_alt
+        )
 
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
+        vehicle.send_mavlink(msg)
+        vehicle.flush()
 
 # Send a mavlink SET_HOME_POSITION message (http://mavlink.org/messages/common#SET_HOME_POSITION), which allows us to use local position information without a GPS.
 def set_default_home_position():
-    x = 0
-    y = 0
-    z = 0
-    q = [1, 0, 0, 0]   # w x y z
+    if  is_vehicle_connected == True:
+        x = 0
+        y = 0
+        z = 0
+        q = [1, 0, 0, 0]   # w x y z
 
-    approach_x = 0
-    approach_y = 0
-    approach_z = 1
+        approach_x = 0
+        approach_y = 0
+        approach_z = 1
 
-    msg = vehicle.message_factory.set_home_position_encode(
-        int(vehicle._master.source_system),
-        home_lat, 
-        home_lon,
-        home_alt,
-        x,
-        y,
-        z,
-        q,
-        approach_x,
-        approach_y,
-        approach_z
-    )
+        msg = vehicle.message_factory.set_home_position_encode(
+            int(vehicle._master.source_system),
+            home_lat, 
+            home_lon,
+            home_alt,
+            x,
+            y,
+            z,
+            q,
+            approach_x,
+            approach_y,
+            approach_z
+        )
 
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
+        vehicle.send_mavlink(msg)
+        vehicle.flush()
 
 # Request a timesync update from the flight controller, for future work.
 # TODO: Inspect the usage of timesync_update 
@@ -297,7 +302,7 @@ def update_timesync(ts=0, tc=0):
 # Listen to messages that indicate EKF is ready to set home, then set EKF home automatically.
 def statustext_callback(self, attr_name, value):
     # These are the status texts that indicates EKF is ready to receive home position
-    if value.text == "GPS Glitch" or value.text == "GPS Glitch cleared" or value.text == "EKF2 IMU1 ext nav yaw alignment complete":
+    if is_vehicle_connected == True and value.text == "GPS Glitch" or value.text == "GPS Glitch cleared" or value.text == "EKF2 IMU1 ext nav yaw alignment complete":
         time.sleep(0.1)
         print("INFO: Set EKF home with default GPS location")
         set_default_global_origin()
@@ -314,16 +319,19 @@ def att_msg_callback(self, attr_name, value):
         print("INFO: Received ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
 
 def vehicle_connect():
-    global vehicle
+    global vehicle, is_vehicle_connected
     
     try:
         vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
     except:
         print('Connection error! Retrying...')
+        sleep(1)
 
     if vehicle == None:
+        is_vehicle_connected = False
         return False
     else:
+        is_vehicle_connected = True
         return True
 
 def realsense_connect():
@@ -395,6 +403,15 @@ print("INFO: Sending VISION_POSITION_ESTIMATE messages to FCU.")
 
 try:
     while True:
+
+        # Monitor last_heartbeat to reconnect in case of lost connection
+        if vehicle.last_heartbeat > connection_timeout_sec_default:
+            is_vehicle_connected = False
+            print("WARNING: CONNECTION LOST. Last hearbeat was %f sec ago."% vehicle.last_heartbeat)
+            print("WARNING: Attempting to reconnect ...")
+            vehicle_connect()
+            continue
+        
         # Wait for the next set of frames from the camera
         frames = pipe.wait_for_frames()
 
