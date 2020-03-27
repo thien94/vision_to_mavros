@@ -40,7 +40,7 @@ connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 vision_msg_hz_default = 30
 confidence_msg_hz_default = 1
-camera_orientation_default = 2
+camera_orientation_default = 0
 
 # In NED frame, offset from the IMU or the center of gravity to the camera's origin point
 body_offset_enabled = 0
@@ -78,10 +78,12 @@ parser.add_argument('--vision_msg_hz', type=float,
                     help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
 parser.add_argument('--confidence_msg_hz', type=float,
                     help="Update frequency for confidence level. If not specified, a default value will be used.")
-parser.add_argument('--scale_calib_enable', type=bool,
+parser.add_argument('--scale_calib_enable', default=False, action='store_true',
                     help="Scale calibration. Only run while NOT in flight")
 parser.add_argument('--camera_orientation', type=int,
                     help="Configuration for camera orientation. Currently supported: forward, usb port to the right - 0; downward, usb port to the right - 1")
+parser.add_argument('--auto_set_ekf_home_enable', default=True, action='store_false',
+                    help="Enable auto setting EKF home")
 parser.add_argument('--debug_enable',type=int,
                     help="Enable debug messages on terminal")
 
@@ -94,6 +96,7 @@ vision_msg_hz = args.vision_msg_hz
 confidence_msg_hz = args.confidence_msg_hz
 scale_calib_enable = args.scale_calib_enable
 camera_orientation = args.camera_orientation
+auto_set_ekf_home_enable = args.auto_set_ekf_home_enable
 debug_enable = args.debug_enable
 
 # Using default values if no specified inputs
@@ -163,16 +166,19 @@ elif camera_orientation == 2:
     # 45degree forward
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
     H_T265body_aeroBody = np.array(
-    [[ 0.        ,  1.        ,  0.        ,  0.        ],
-    [-0.70710676, -0.        , -0.70710676, -0.        ],
-    [-0.70710676,  0.        ,  0.70710676,  0.        ],
-    [ 0.        ,  0.        ,  0.        ,  1.        ]])
-
+        [[ 0.       ,  1.        ,  0.        ,  0.        ],
+        [-0.70710676, -0.        , -0.70710676, -0.        ],
+        [-0.70710676,  0.        ,  0.70710676,  0.        ],
+        [ 0.        ,  0.        ,  0.        ,  1.        ]])
 else: 
     # Default is facing forward, USB port to the right
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
     H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 
+if auto_set_ekf_home_enable == False:
+    print("INFO: Automatically set EKF home: DISABLED")
+else:
+    print("INFO: Automatically set EKF home: Enabled")
 
 if not debug_enable:
     debug_enable = 0
@@ -355,7 +361,8 @@ while (not vehicle_connect()):
 print("INFO: Vehicle connected.")
 
 # Listen to the mavlink messages that will be used as trigger to set EKF home automatically
-vehicle.add_message_listener('STATUSTEXT', statustext_callback)
+if auto_set_ekf_home_enable == True:
+    vehicle.add_message_listener('STATUSTEXT', statustext_callback)
 
 if compass_enabled == 1:
     # Listen to the attitude data in aeronautical frame
