@@ -219,8 +219,6 @@ def send_vision_position_message():
 def send_confidence_level_dummy_message():
     global is_vehicle_connected, data, current_confidence
     if is_vehicle_connected == True and data is not None:
-        # Show confidence level on terminal
-        print("INFO: Tracking confidence: ", pose_data_confidence_level[data.tracker_confidence])
 
         # Send MAVLink message to show confidence level numerically
         msg = vehicle.message_factory.vision_position_delta_encode(
@@ -233,21 +231,25 @@ def send_confidence_level_dummy_message():
         vehicle.send_mavlink(msg)
         vehicle.flush()
 
-        # If confidence level changes, send MAVLink message to show confidence level textually and phonetically
-        if current_confidence is None or current_confidence != data.tracker_confidence:
-            current_confidence = data.tracker_confidence
-            confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
-            status_msg = vehicle.message_factory.statustext_encode(
-                3,	            #severity, defined here: https://mavlink.io/en/messages/common.html#MAV_SEVERITY, 3 will let the message be displayed on Mission Planner HUD
-                confidence_status_string.encode()	  #text	char[50]       
-            )
-            vehicle.send_mavlink(status_msg)
-            vehicle.flush()
+        confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
+        send_msg_to_gcs(confidence_status_string)
 
+def send_msg_to_gcs(text_to_be_sent):
+    if is_vehicle_connected == True:
+        text_msg = 'T265: ' + text_to_be_sent
+        status_msg = vehicle.message_factory.statustext_encode(
+            6,	            #severity, defined here: https://mavlink.io/en/messages/common.html#MAV_SEVERITY, 3 will let the message be displayed on Mission Planner HUD
+            text_msg.encode()	  #text	char[50]       
+        )
+        vehicle.send_mavlink(status_msg)
+        vehicle.flush()
+        print("INFO: " + text_to_be_sent)
+    else:
+        print("INFO: Vehicle not connected. Cannot send text message to Ground Control Station (GCS)")
 
 # Send a mavlink SET_GPS_GLOBAL_ORIGIN message (http://mavlink.org/messages/common#SET_GPS_GLOBAL_ORIGIN), which allows us to use local position information without a GPS.
 def set_default_global_origin():
-    if  is_vehicle_connected == True:
+    if is_vehicle_connected == True:
         msg = vehicle.message_factory.set_gps_global_origin_encode(
             int(vehicle._master.source_system),
             home_lat, 
@@ -260,7 +262,7 @@ def set_default_global_origin():
 
 # Send a mavlink SET_HOME_POSITION message (http://mavlink.org/messages/common#SET_HOME_POSITION), which allows us to use local position information without a GPS.
 def set_default_home_position():
-    if  is_vehicle_connected == True:
+    if is_vehicle_connected == True:
         x = 0
         y = 0
         z = 0
@@ -304,7 +306,7 @@ def statustext_callback(self, attr_name, value):
     # These are the status texts that indicates EKF is ready to receive home position
     if is_vehicle_connected == True and value.text == "GPS Glitch" or value.text == "GPS Glitch cleared" or value.text == "EKF2 IMU1 ext nav yaw alignment complete":
         time.sleep(0.1)
-        print("INFO: Set EKF home with default GPS location")
+        send_msg_to_gcs('Set EKF home with default GPS location')
         set_default_global_origin()
         set_default_home_position()
 
@@ -359,14 +361,14 @@ def scale_update():
 # Main code starts here
 #######################################
 
-print("INFO: Connecting to Realsense camera.")
-realsense_connect()
-print("INFO: Realsense connected.")
-
 print("INFO: Connecting to vehicle.")
 while (not vehicle_connect()):
     pass
 print("INFO: Vehicle connected.")
+
+send_msg_to_gcs('Connecting to camera...')
+realsense_connect()
+send_msg_to_gcs('Camera connected...')
 
 # Listen to the mavlink messages that will be used as trigger to set EKF home automatically
 if auto_set_ekf_home_enable == True:
@@ -399,7 +401,7 @@ if compass_enabled == 1:
     # Wait a short while for yaw to be correctly initiated
     time.sleep(1)
 
-print("INFO: Sending VISION_POSITION_ESTIMATE messages to FCU.")
+send_msg_to_gcs('Sending VISION_POSITION_ESTIMATE messages to FCU')
 
 try:
     while True:
@@ -456,7 +458,10 @@ try:
                 print("DEBUG: NED pos xyz : {}".format( np.array( tf.translation_from_matrix( H_aeroRef_aeroBody))))
                 
 except KeyboardInterrupt:
-    print("INFO: KeyboardInterrupt has been caught. Cleaning up...")     
+    send_msg_to_gcs('Closing the script')  
+
+except:
+    send_msg_to_gcs('ERROR: Camera disconnected')  
 
 finally:
     pipe.stop()
