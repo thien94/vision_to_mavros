@@ -33,6 +33,17 @@ from dronekit import connect, VehicleMode
 from pymavlink import mavutil
 
 #######################################
+# Global variables
+#######################################
+
+vehicle = None
+is_vehicle_connected = False
+pipe = None
+data = None
+H_aeroRef_aeroBody = None
+heading_north_yaw = None
+
+#######################################
 # Parameters
 #######################################
 
@@ -61,10 +72,6 @@ home_lat = 151269321       # Somewhere in Africa
 home_lon = 16624301        # Somewhere in Africa
 home_alt = 163000 
 
-vehicle = None
-is_vehicle_connected = False
-pipe = None
-
 # pose data confidence: 0x0 - Failed / 0x1 - Low / 0x2 - Medium / 0x3 - High 
 pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
 
@@ -84,12 +91,11 @@ parser.add_argument('--confidence_msg_hz', type=float,
 parser.add_argument('--scale_calib_enable', default=False, action='store_true',
                     help="Scale calibration. Only run while NOT in flight")
 parser.add_argument('--camera_orientation', type=int,
-                    help="Configuration for camera orientation. Currently supported: forward, usb port to the right - 0; downward, usb port to the right - 1")
+                    help="Configuration for camera orientation. Currently supported: forward, usb port to the right - 0; downward, usb port to the right - 1, 2: forward tilted down 45deg")
 parser.add_argument('--auto_set_ekf_home_enable', default=True, action='store_false',
                     help="Enable auto setting EKF home")
 parser.add_argument('--debug_enable',type=int,
                     help="Enable debug messages on terminal")
-
 
 args = parser.parse_args()
 
@@ -181,7 +187,7 @@ else:
 if auto_set_ekf_home_enable == False:
     print("INFO: Automatically set EKF home: DISABLED")
 else:
-    print("INFO: Automatically set EKF home: Enabled")
+    print("INFO: Automatically set EKF home: ENABLED")
 
 if not debug_enable:
     debug_enable = 0
@@ -217,7 +223,7 @@ def send_vision_position_message():
 # For a lack of a dedicated message, we pack the confidence level into a message that will not be used, so we can view it on GCS
 # Confidence level value: 0 - 3, remapped to 0 - 100: 0% - Failed / 33.3% - Low / 66.6% - Medium / 100% - High 
 def send_confidence_level_dummy_message():
-    global is_vehicle_connected, data, current_confidence
+    global data
     if is_vehicle_connected == True and data is not None:
 
         # Send MAVLink message to show confidence level numerically
@@ -235,11 +241,14 @@ def send_confidence_level_dummy_message():
         send_msg_to_gcs(confidence_status_string)
 
 def send_msg_to_gcs(text_to_be_sent):
+    # MAV_SEVERITY: 0=EMERGENCY 1=ALERT 2=CRITICAL 3=ERROR, 4=WARNING, 5=NOTICE, 6=INFO, 7=DEBUG, 8=ENUM_END
+    # Defined here: https://mavlink.io/en/messages/common.html#MAV_SEVERITY
+    # MAV_SEVERITY = 3 will let the message be displayed on Mission Planner HUD, but 6 is ok for QGroundControl
     if is_vehicle_connected == True:
         text_msg = 'T265: ' + text_to_be_sent
         status_msg = vehicle.message_factory.statustext_encode(
-            6,	            #severity, defined here: https://mavlink.io/en/messages/common.html#MAV_SEVERITY, 3 will let the message be displayed on Mission Planner HUD
-            text_msg.encode()	  #text	char[50]       
+            6,                      # MAV_SEVERITY
+            text_msg.encode()	    # max size is char[50]       
         )
         vehicle.send_mavlink(status_msg)
         vehicle.flush()
@@ -304,7 +313,7 @@ def update_timesync(ts=0, tc=0):
 # Listen to messages that indicate EKF is ready to set home, then set EKF home automatically.
 def statustext_callback(self, attr_name, value):
     # These are the status texts that indicates EKF is ready to receive home position
-    if is_vehicle_connected == True and value.text == "GPS Glitch" or value.text == "GPS Glitch cleared" or value.text == "EKF2 IMU1 ext nav yaw alignment complete":
+    if is_vehicle_connected == True and (value.text == "GPS Glitch" or value.text == "GPS Glitch cleared" or value.text == "EKF2 IMU1 ext nav yaw alignment complete"):
         time.sleep(0.1)
         send_msg_to_gcs('Set EKF home with default GPS location')
         set_default_global_origin()
@@ -368,7 +377,7 @@ print("INFO: Vehicle connected.")
 
 send_msg_to_gcs('Connecting to camera...')
 realsense_connect()
-send_msg_to_gcs('Camera connected...')
+send_msg_to_gcs('Camera connected.')
 
 # Listen to the mavlink messages that will be used as trigger to set EKF home automatically
 if auto_set_ekf_home_enable == True:
@@ -377,11 +386,6 @@ if auto_set_ekf_home_enable == True:
 if compass_enabled == 1:
     # Listen to the attitude data in aeronautical frame
     vehicle.add_message_listener('ATTITUDE', att_msg_callback)
-
-data = None
-current_confidence = None
-H_aeroRef_aeroBody = None
-heading_north_yaw = None
 
 # Send MAVlink messages in the background
 sched = BackgroundScheduler()
@@ -401,11 +405,10 @@ if compass_enabled == 1:
     # Wait a short while for yaw to be correctly initiated
     time.sleep(1)
 
-send_msg_to_gcs('Sending VISION_POSITION_ESTIMATE messages to FCU')
+send_msg_to_gcs('Sending vision messages to FCU')
 
 try:
     while True:
-
         # Monitor last_heartbeat to reconnect in case of lost connection
         if vehicle.last_heartbeat > connection_timeout_sec_default:
             is_vehicle_connected = False
@@ -458,7 +461,7 @@ try:
                 print("DEBUG: NED pos xyz : {}".format( np.array( tf.translation_from_matrix( H_aeroRef_aeroBody))))
                 
 except KeyboardInterrupt:
-    send_msg_to_gcs('Closing the script')  
+    send_msg_to_gcs('Closing the script...')  
 
 except:
     send_msg_to_gcs('ERROR: Camera disconnected')  
