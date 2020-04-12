@@ -33,17 +33,6 @@ from dronekit import connect, VehicleMode
 from pymavlink import mavutil
 
 #######################################
-# Global variables
-#######################################
-
-vehicle = None
-is_vehicle_connected = False
-pipe = None
-data = None
-H_aeroRef_aeroBody = None
-heading_north_yaw = None
-
-#######################################
 # Parameters
 #######################################
 
@@ -51,15 +40,24 @@ heading_north_yaw = None
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 connection_timeout_sec_default = 5
-vision_msg_hz_default = 30
-confidence_msg_hz_default = 1
 camera_orientation_default = 0
 
+# Enable/disable each message/function individually
+enable_msg_vision_position_estimate = False
+vision_position_estimate_msg_hz_default = 30
+
+enable_msg_vision_position_delta = True
+vision_position_delta_msg_hz_default = 30
+
+enable_update_tracking_confidence_to_gcs = True
+update_tracking_confidence_to_gcs_hz_default = 1
+
+# TODO: Taken care of by ArduPilot, so can be removed (once the handling on AP side is confirmed stable)
 # In NED frame, offset from the IMU or the center of gravity to the camera's origin point
 body_offset_enabled = 0
-body_offset_x = 0.05    # In meters (m), so 0.05 = 5cm
-body_offset_y = 0       # In meters (m)
-body_offset_z = 0       # In meters (m)
+body_offset_x = 0  # In meters (m)
+body_offset_y = 0  # In meters (m)
+body_offset_z = 0  # In meters (m)
 
 # Global scale factor, position x y z will be scaled up/down by this factor
 scale_factor = 1.0
@@ -79,6 +77,24 @@ pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
 lock = threading.Lock()
 
 #######################################
+# Global variables
+#######################################
+
+# FCU connection variables
+vehicle = None
+is_vehicle_connected = False
+
+# Camera-related variables
+pipe = None
+
+# Data variables
+data = None
+H_aeroRef_aeroBody = None
+heading_north_yaw = None
+current_confidence_level = None
+current_time_us = 0
+
+#######################################
 # Parsing user' inputs
 #######################################
 
@@ -87,16 +103,14 @@ parser.add_argument('--connect',
                     help="Vehicle connection target string. If not specified, a default string will be used.")
 parser.add_argument('--baudrate', type=float,
                     help="Vehicle connection baudrate. If not specified, a default value will be used.")
-parser.add_argument('--vision_msg_hz', type=float,
+parser.add_argument('--vision_position_estimate_msg_hz', type=float,
                     help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
-parser.add_argument('--confidence_msg_hz', type=float,
-                    help="Update frequency for confidence level. If not specified, a default value will be used.")
+parser.add_argument('--vision_position_delta_msg_hz', type=float,
+                    help="Update frequency for VISION_POSITION_DELTA message. If not specified, a default value will be used.")
 parser.add_argument('--scale_calib_enable', default=False, action='store_true',
                     help="Scale calibration. Only run while NOT in flight")
 parser.add_argument('--camera_orientation', type=int,
                     help="Configuration for camera orientation. Currently supported: forward, usb port to the right - 0; downward, usb port to the right - 1, 2: forward tilted down 45deg")
-parser.add_argument('--auto_set_ekf_home_enable', default=True, action='store_false',
-                    help="Enable auto setting EKF home")
 parser.add_argument('--debug_enable',type=int,
                     help="Enable debug messages on terminal")
 
@@ -104,11 +118,10 @@ args = parser.parse_args()
 
 connection_string = args.connect
 connection_baudrate = args.baudrate
-vision_msg_hz = args.vision_msg_hz
-confidence_msg_hz = args.confidence_msg_hz
+vision_position_estimate_msg_hz = args.vision_position_estimate_msg_hz
+vision_position_delta_msg_hz = args.vision_position_delta_msg_hz
 scale_calib_enable = args.scale_calib_enable
 camera_orientation = args.camera_orientation
-auto_set_ekf_home_enable = args.auto_set_ekf_home_enable
 debug_enable = args.debug_enable
 
 # Using default values if no specified inputs
@@ -124,17 +137,17 @@ if not connection_baudrate:
 else:
     print("INFO: Using connection_baudrate", connection_baudrate)
 
-if not vision_msg_hz:
-    vision_msg_hz = vision_msg_hz_default
-    print("INFO: Using default vision_msg_hz", vision_msg_hz)
+if not vision_position_estimate_msg_hz:
+    vision_position_estimate_msg_hz = vision_position_estimate_msg_hz_default
+    print("INFO: Using default vision_position_estimate_msg_hz", vision_position_estimate_msg_hz)
 else:
-    print("INFO: Using vision_msg_hz", vision_msg_hz)
+    print("INFO: Using vision_position_estimate_msg_hz", vision_position_estimate_msg_hz)
     
-if not confidence_msg_hz:
-    confidence_msg_hz = confidence_msg_hz_default
-    print("INFO: Using default confidence_msg_hz", confidence_msg_hz)
+if not vision_position_delta_msg_hz:
+    vision_position_delta_msg_hz = vision_position_delta_msg_hz_default
+    print("INFO: Using default vision_position_delta_msg_hz", vision_position_delta_msg_hz)
 else:
-    print("INFO: Using confidence_msg_hz", confidence_msg_hz)
+    print("INFO: Using vision_position_delta_msg_hz", vision_position_delta_msg_hz)
 
 if body_offset_enabled == 1:
     print("INFO: Using camera position offset: Enabled, x y z is", body_offset_x, body_offset_y, body_offset_z)
@@ -187,11 +200,6 @@ else:
     H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
     H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 
-if auto_set_ekf_home_enable == False:
-    print("INFO: Automatically set EKF home: DISABLED")
-else:
-    print("INFO: Automatically set EKF home: ENABLED")
-
 if not debug_enable:
     debug_enable = 0
 else:
@@ -199,20 +207,19 @@ else:
     np.set_printoptions(precision=4, suppress=True) # Format output on terminal 
     print("INFO: Debug messages enabled.")
 
+
 #######################################
 # Functions
 #######################################
 
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
-def send_vision_position_message():
-    global is_vehicle_connected, current_time, H_aeroRef_aeroBody
-
+def send_vision_position_estimate_message():
+    global is_vehicle_connected, current_time_us, H_aeroRef_aeroBody
     with lock:
         if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
             rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
-
             msg = vehicle.message_factory.vision_position_estimate_encode(
-                current_time,                       # us Timestamp (UNIX time or time since system boot)
+                current_time_us,                       # us Timestamp (UNIX time or time since system boot)
                 H_aeroRef_aeroBody[0][3],	        # Global X position
                 H_aeroRef_aeroBody[1][3],           # Global Y position
                 H_aeroRef_aeroBody[2][3],	        # Global Z position
@@ -224,25 +231,38 @@ def send_vision_position_message():
             vehicle.send_mavlink(msg)
             vehicle.flush()
 
-# For a lack of a dedicated message, we pack the confidence level into a message that will not be used, so we can view it on GCS
-# Confidence level value: 0 - 3, remapped to 0 - 100: 0% - Failed / 33.3% - Low / 66.6% - Medium / 100% - High 
-def send_confidence_level_dummy_message():
-    global data
-    if is_vehicle_connected == True and data is not None:
+# https://mavlink.io/en/messages/ardupilotmega.html#VISION_POSITION_DELTA
+def send_vision_position_delta_message():
+    global is_vehicle_connected, current_time_us, current_confidence_level, H_aeroRef_aeroBody
+    with lock:
+        if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
+            # Calculate the deltas in position, attitude and time from the previous to current orientation
+            H_aeroRef_PrevAeroBody      = send_vision_position_delta_message.H_aeroRef_PrevAeroBody
+            H_PrevAeroBody_CurrAeroBody = (np.linalg.inv(H_aeroRef_PrevAeroBody)).dot(H_aeroRef_aeroBody)
 
-        # Send MAVLink message to show confidence level numerically
-        msg = vehicle.message_factory.vision_position_delta_encode(
-            0,	            #us	Timestamp (UNIX time or time since system boot)
-            0,	            #Time since last reported camera frame
-            [0, 0, 0],      #angle_delta
-            [0, 0, 0],      #position_delta
-            float(data.tracker_confidence * 100 / 3)          
-        )
-        vehicle.send_mavlink(msg)
-        vehicle.flush()
+            delta_time_us    = current_time_us - send_vision_position_delta_message.prev_time_us
+            delta_position_m = [H_PrevAeroBody_CurrAeroBody[0][3], H_PrevAeroBody_CurrAeroBody[1][3], H_PrevAeroBody_CurrAeroBody[2][3]]
+            delta_angle_rad  = np.array( tf.euler_from_matrix(H_PrevAeroBody_CurrAeroBody, 'sxyz'))
 
-        confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
-        send_msg_to_gcs(confidence_status_string)
+            # Send the message
+            msg = vehicle.message_factory.vision_position_delta_encode(
+                current_time_us,    # us: Timestamp (UNIX time or time since system boot)
+                delta_time_us,	    # us: Time since last reported camera frame
+                delta_angle_rad,    # float[3] in radian: Defines a rotation vector in body frame that rotates the vehicle from the previous to the current orientation
+                delta_position_m,   # float[3] in m: Change in position from previous to current frame rotated into body frame (0=forward, 1=right, 2=down)
+                current_confidence_level # Normalised confidence value from 0 to 100. 
+            )
+            vehicle.send_mavlink(msg)
+            vehicle.flush()
+
+            # Save static variables
+            send_vision_position_delta_message.H_aeroRef_PrevAeroBody = H_aeroRef_aeroBody
+            send_vision_position_delta_message.prev_time_us = current_time_us
+
+def send_tracking_confidence_to_gcs():
+    global current_confidence_level
+    confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
+    send_msg_to_gcs(confidence_status_string)
 
 def send_msg_to_gcs(text_to_be_sent):
     # MAV_SEVERITY: 0=EMERGENCY 1=ALERT 2=CRITICAL 3=ERROR, 4=WARNING, 5=NOTICE, 6=INFO, 7=DEBUG, 8=ENUM_END
@@ -314,15 +334,6 @@ def update_timesync(ts=0, tc=0):
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
-# Listen to messages that indicate EKF is ready to set home, then set EKF home automatically.
-def statustext_callback(self, attr_name, value):
-    # These are the status texts that indicates EKF is ready to receive home position
-    if is_vehicle_connected == True and (value.text == "GPS Glitch" or value.text == "GPS Glitch cleared" or value.text == "EKF2 IMU1 ext nav yaw alignment complete"):
-        time.sleep(0.1)
-        send_msg_to_gcs('Set EKF home with default GPS location')
-        set_default_global_origin()
-        set_default_home_position()
-
 # Listen to attitude data to acquire heading when compass data is enabled
 def att_msg_callback(self, attr_name, value):
     global heading_north_yaw
@@ -363,12 +374,26 @@ def realsense_connect():
     # Start streaming with requested config
     pipe.start(cfg)
 
-# Monitor user input from the terminal and update scale factor accordingly
-def scale_update():
+# Monitor user input from the terminal and perform action accordingly
+def user_keyboard_input_check():
     global scale_factor
     while True:
-        scale_factor = float(input("INFO: Type in new scale as float number\n"))
-        print("INFO: New scale is ", scale_factor)  
+        # Specical case: updating scale
+        if scale_calib_enable == True:
+            scale_factor = float(input("INFO: Type in new scale as float number\n"))
+            print("INFO: New scale is ", scale_factor)
+
+        # Add new action here according to the key pressed.
+        # Enter: Set EKF home when user press enter
+        try:
+            c = input()
+            if c == "":
+                send_msg_to_gcs('Set EKF home with default GPS location')
+                set_default_global_origin()
+                set_default_home_position()
+            else:
+                print("Got keyboard input", c)
+        except IOError: pass
 
 #######################################
 # Main code starts here
@@ -383,31 +408,35 @@ send_msg_to_gcs('Connecting to camera...')
 realsense_connect()
 send_msg_to_gcs('Camera connected.')
 
-# Listen to the mavlink messages that will be used as trigger to set EKF home automatically
-if auto_set_ekf_home_enable == True:
-    vehicle.add_message_listener('STATUSTEXT', statustext_callback)
+print("INFO: Press Enter to automatically set EKF home at default location")
 
 if compass_enabled == 1:
     # Listen to the attitude data in aeronautical frame
     vehicle.add_message_listener('ATTITUDE', att_msg_callback)
 
-# Send MAVlink messages in the background
+# Send MAVlink messages in the background at pre-determined frequencies
 sched = BackgroundScheduler()
 
-sched.add_job(send_vision_position_message, 'interval', seconds = 1/vision_msg_hz)
-sched.add_job(send_confidence_level_dummy_message, 'interval', seconds = 1/confidence_msg_hz)
+if enable_msg_vision_position_estimate:
+    sched.add_job(send_vision_position_estimate_message, 'interval', seconds = 1/vision_position_estimate_msg_hz)
 
-# For scale calibration, we will use a thread to monitor user input
-if scale_calib_enable == True:
-    scale_update_thread = threading.Thread(target=scale_update)
-    scale_update_thread.daemon = True
-    scale_update_thread.start()
+if enable_msg_vision_position_delta:
+    sched.add_job(send_vision_position_delta_message, 'interval', seconds = 1/vision_position_delta_msg_hz)
+    send_vision_position_delta_message.H_aeroRef_PrevAeroBody = tf.quaternion_matrix([1,0,0,0]) 
+    send_vision_position_delta_message.prev_time_us = int(round(time.time() * 1000000))
+
+if enable_update_tracking_confidence_to_gcs:
+    sched.add_job(send_tracking_confidence_to_gcs, 'interval', seconds = 1/update_tracking_confidence_to_gcs_hz_default)
+
+# A separate thread to monitor user input
+user_keyboard_input_thread = threading.Thread(target=user_keyboard_input_check)
+user_keyboard_input_thread.daemon = True
+user_keyboard_input_thread.start()
 
 sched.start()
 
 if compass_enabled == 1:
-    # Wait a short while for yaw to be correctly initiated
-    time.sleep(1)
+    time.sleep(1) # Wait a short while for yaw to be correctly initiated
 
 send_msg_to_gcs('Sending vision messages to FCU')
 
@@ -427,13 +456,17 @@ try:
         # Fetch pose frame
         pose = frames.get_pose_frame()
 
+        # Process data
         if pose:
             with lock:
                 # Store the timestamp for MAVLink messages
-                current_time = int(round(time.time() * 1000000))
+                current_time_us = int(round(time.time() * 1000000))
 
                 # Pose data consists of translation and rotation
                 data = pose.get_pose_data()
+                
+                # Confidence level value from T265: 0-3, remapped to 0 - 100: 0% - Failed / 33.3% - Low / 66.6% - Medium / 100% - High  
+                current_confidence_level = float(data.tracker_confidence * 100 / 3)  
 
                 # In transformations, Quaternions w+ix+jy+kz are represented as [w, x, y, z]!
                 H_T265Ref_T265body = tf.quaternion_matrix([data.rotation.w, data.rotation.x, data.rotation.y, data.rotation.z]) 
@@ -464,7 +497,7 @@ try:
                     print("DEBUG: NED RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_aeroRef_aeroBody, 'sxyz')) * 180 / m.pi))
                     print("DEBUG: Raw pos xyz : {}".format( np.array( [data.translation.x, data.translation.y, data.translation.z])))
                     print("DEBUG: NED pos xyz : {}".format( np.array( tf.translation_from_matrix( H_aeroRef_aeroBody))))
-                
+
 except KeyboardInterrupt:
     send_msg_to_gcs('Closing the script...')  
 
