@@ -75,6 +75,9 @@ home_alt = 163000
 # pose data confidence: 0x0 - Failed / 0x1 - Low / 0x2 - Medium / 0x3 - High 
 pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
 
+# lock for thread synchronization
+lock = threading.Lock()
+
 #######################################
 # Parsing user' inputs
 #######################################
@@ -204,21 +207,22 @@ else:
 def send_vision_position_message():
     global is_vehicle_connected, current_time, H_aeroRef_aeroBody
 
-    if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
-        rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
+    with lock:
+        if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
+            rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
 
-        msg = vehicle.message_factory.vision_position_estimate_encode(
-            current_time,                       # us Timestamp (UNIX time or time since system boot)
-            H_aeroRef_aeroBody[0][3],	        # Global X position
-            H_aeroRef_aeroBody[1][3],           # Global Y position
-            H_aeroRef_aeroBody[2][3],	        # Global Z position
-            rpy_rad[0],	                        # Roll angle
-            rpy_rad[1],	                        # Pitch angle
-            rpy_rad[2]	                        # Yaw angle
-        )
+            msg = vehicle.message_factory.vision_position_estimate_encode(
+                current_time,                       # us Timestamp (UNIX time or time since system boot)
+                H_aeroRef_aeroBody[0][3],	        # Global X position
+                H_aeroRef_aeroBody[1][3],           # Global Y position
+                H_aeroRef_aeroBody[2][3],	        # Global Z position
+                rpy_rad[0],	                        # Roll angle
+                rpy_rad[1],	                        # Pitch angle
+                rpy_rad[2]	                        # Yaw angle
+            )
 
-        vehicle.send_mavlink(msg)
-        vehicle.flush()
+            vehicle.send_mavlink(msg)
+            vehicle.flush()
 
 # For a lack of a dedicated message, we pack the confidence level into a message that will not be used, so we can view it on GCS
 # Confidence level value: 0 - 3, remapped to 0 - 100: 0% - Failed / 33.3% - Low / 66.6% - Medium / 100% - High 
@@ -424,41 +428,42 @@ try:
         pose = frames.get_pose_frame()
 
         if pose:
-            # Store the timestamp for MAVLink messages
-            current_time = int(round(time.time() * 1000000))
+            with lock:
+                # Store the timestamp for MAVLink messages
+                current_time = int(round(time.time() * 1000000))
 
-            # Pose data consists of translation and rotation
-            data = pose.get_pose_data()
+                # Pose data consists of translation and rotation
+                data = pose.get_pose_data()
 
-            # In transformations, Quaternions w+ix+jy+kz are represented as [w, x, y, z]!
-            H_T265Ref_T265body = tf.quaternion_matrix([data.rotation.w, data.rotation.x, data.rotation.y, data.rotation.z]) 
-            H_T265Ref_T265body[0][3] = data.translation.x * scale_factor
-            H_T265Ref_T265body[1][3] = data.translation.y * scale_factor
-            H_T265Ref_T265body[2][3] = data.translation.z * scale_factor
+                # In transformations, Quaternions w+ix+jy+kz are represented as [w, x, y, z]!
+                H_T265Ref_T265body = tf.quaternion_matrix([data.rotation.w, data.rotation.x, data.rotation.y, data.rotation.z]) 
+                H_T265Ref_T265body[0][3] = data.translation.x * scale_factor
+                H_T265Ref_T265body[1][3] = data.translation.y * scale_factor
+                H_T265Ref_T265body[2][3] = data.translation.z * scale_factor
 
-            # Transform to aeronautic coordinates (body AND reference frame!)
-            H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
+                # Transform to aeronautic coordinates (body AND reference frame!)
+                H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
 
-            # Take offsets from body's center of gravity (or IMU) to camera's origin into account
-            if body_offset_enabled == 1:
-                H_body_camera = tf.euler_matrix(0, 0, 0, 'sxyz')
-                H_body_camera[0][3] = body_offset_x
-                H_body_camera[1][3] = body_offset_y
-                H_body_camera[2][3] = body_offset_z
-                H_camera_body = np.linalg.inv(H_body_camera)
-                H_aeroRef_aeroBody = H_body_camera.dot(H_aeroRef_aeroBody.dot(H_camera_body))
+                # Take offsets from body's center of gravity (or IMU) to camera's origin into account
+                if body_offset_enabled == 1:
+                    H_body_camera = tf.euler_matrix(0, 0, 0, 'sxyz')
+                    H_body_camera[0][3] = body_offset_x
+                    H_body_camera[1][3] = body_offset_y
+                    H_body_camera[2][3] = body_offset_z
+                    H_camera_body = np.linalg.inv(H_body_camera)
+                    H_aeroRef_aeroBody = H_body_camera.dot(H_aeroRef_aeroBody.dot(H_camera_body))
 
-            # Realign heading to face north using initial compass data
-            if compass_enabled == 1:
-                H_aeroRef_aeroBody = H_aeroRef_aeroBody.dot( tf.euler_matrix(0, 0, heading_north_yaw, 'sxyz'))
+                # Realign heading to face north using initial compass data
+                if compass_enabled == 1:
+                    H_aeroRef_aeroBody = H_aeroRef_aeroBody.dot( tf.euler_matrix(0, 0, heading_north_yaw, 'sxyz'))
 
-            # Show debug messages here
-            if debug_enable == 1:
-                os.system('clear') # This helps in displaying the messages to be more readable
-                print("DEBUG: Raw RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_T265Ref_T265body, 'sxyz')) * 180 / m.pi))
-                print("DEBUG: NED RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_aeroRef_aeroBody, 'sxyz')) * 180 / m.pi))
-                print("DEBUG: Raw pos xyz : {}".format( np.array( [data.translation.x, data.translation.y, data.translation.z])))
-                print("DEBUG: NED pos xyz : {}".format( np.array( tf.translation_from_matrix( H_aeroRef_aeroBody))))
+                # Show debug messages here
+                if debug_enable == 1:
+                    os.system('clear') # This helps in displaying the messages to be more readable
+                    print("DEBUG: Raw RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_T265Ref_T265body, 'sxyz')) * 180 / m.pi))
+                    print("DEBUG: NED RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_aeroRef_aeroBody, 'sxyz')) * 180 / m.pi))
+                    print("DEBUG: Raw pos xyz : {}".format( np.array( [data.translation.x, data.translation.y, data.translation.z])))
+                    print("DEBUG: NED pos xyz : {}".format( np.array( tf.translation_from_matrix( H_aeroRef_aeroBody))))
                 
 except KeyboardInterrupt:
     send_msg_to_gcs('Closing the script...')  
