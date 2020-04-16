@@ -53,7 +53,11 @@ vision_position_delta_msg_hz_default = 15
 enable_update_tracking_confidence_to_gcs = True
 update_tracking_confidence_to_gcs_hz_default = 1
 
+# Default global position for EKF home/ origin
 enable_auto_set_ekf_home = False
+home_lat = 151269321    # Somewhere random
+home_lon = 16624301     # Somewhere random
+home_alt = 163000       # Somewhere random
 
 # TODO: Taken care of by ArduPilot, so can be removed (once the handling on AP side is confirmed stable)
 # In NED frame, offset from the IMU or the center of gravity to the camera's origin point
@@ -67,11 +71,6 @@ scale_factor = 1.0
 
 # Enable using yaw from compass to align north (zero degree is facing north)
 compass_enabled = 0
-
-# Default global position of home/ origin
-home_lat = 151269321    # Somewhere random
-home_lon = 16624301     # Somewhere random
-home_alt = 163000       # Somewhere random
 
 # pose data confidence: 0x0 - Failed / 0x1 - Low / 0x2 - Medium / 0x3 - High 
 pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
@@ -182,25 +181,17 @@ else:
 #   2: Forward, 45 degree tilted down
 # Important note for downfacing camera: you need to tilt the vehicle's nose up a little - not flat - before you run the script, otherwise the initial yaw will be randomized, read here for more details: https://github.com/IntelRealSense/librealsense/issues/4080. Tilt the vehicle to any other sides and the yaw might not be as stable.
 
-if camera_orientation == 0: 
-    # Forward, USB port to the right
-    H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
+if camera_orientation == 0:     # Forward, USB port to the right
+    H_aeroRef_T265Ref   = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
     H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
-elif camera_orientation == 1:
-    # Downfacing, USB port to the right
-    H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
+elif camera_orientation == 1:   # Downfacing, USB port to the right
+    H_aeroRef_T265Ref   = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
     H_T265body_aeroBody = np.array([[0,1,0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
-elif camera_orientation == 2:
-    # 45degree forward
-    H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-    H_T265body_aeroBody = np.array(
-        [[ 0.       ,  1.        ,  0.        ,  0.        ],
-        [-0.70710676, -0.        , -0.70710676, -0.        ],
-        [-0.70710676,  0.        ,  0.70710676,  0.        ],
-        [ 0.        ,  0.        ,  0.        ,  1.        ]])
-else: 
-    # Default is facing forward, USB port to the right
-    H_aeroRef_T265Ref = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
+elif camera_orientation == 2:   # 45degree forward
+    H_aeroRef_T265Ref   = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
+    H_T265body_aeroBody = (tf.euler_matrix(m.pi/4, 0, 0)).dot(np.linalg.inv(H_aeroRef_T265Ref))
+else:                           # Default is facing forward, USB port to the right
+    H_aeroRef_T265Ref   = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
     H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 
 if not debug_enable:
@@ -222,7 +213,7 @@ def send_vision_position_estimate_message():
         if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
             rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
             msg = vehicle.message_factory.vision_position_estimate_encode(
-                current_time_us,                       # us Timestamp (UNIX time or time since system boot)
+                current_time_us,                    # us Timestamp (UNIX time or time since system boot)
                 H_aeroRef_aeroBody[0][3],	        # Global X position
                 H_aeroRef_aeroBody[1][3],           # Global Y position
                 H_aeroRef_aeroBody[2][3],	        # Global Z position
