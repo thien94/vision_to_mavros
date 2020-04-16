@@ -10,7 +10,7 @@
 #   pip3 install dronekit
 #   pip3 install apscheduler
 
- # Set the path for IDLE
+# Set the path for IDLE
 import sys
 sys.path.append("/usr/local/lib/")
 
@@ -40,17 +40,20 @@ from pymavlink import mavutil
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 connection_timeout_sec_default = 5
+
 camera_orientation_default = 0
 
 # Enable/disable each message/function individually
-enable_msg_vision_position_estimate = False
-vision_position_estimate_msg_hz_default = 30
+enable_msg_vision_position_estimate = True
+vision_position_estimate_msg_hz_default = 15
 
-enable_msg_vision_position_delta = True
-vision_position_delta_msg_hz_default = 30
+enable_msg_vision_position_delta = False
+vision_position_delta_msg_hz_default = 15
 
 enable_update_tracking_confidence_to_gcs = True
 update_tracking_confidence_to_gcs_hz_default = 1
+
+enable_auto_set_ekf_home = False
 
 # TODO: Taken care of by ArduPilot, so can be removed (once the handling on AP side is confirmed stable)
 # In NED frame, offset from the IMU or the center of gravity to the camera's origin point
@@ -66,9 +69,9 @@ scale_factor = 1.0
 compass_enabled = 0
 
 # Default global position of home/ origin
-home_lat = 151269321       # Somewhere in Africa
-home_lon = 16624301        # Somewhere in Africa
-home_alt = 163000 
+home_lat = 151269321    # Somewhere random
+home_lon = 16624301     # Somewhere random
+home_alt = 163000       # Somewhere random
 
 # pose data confidence: 0x0 - Failed / 0x1 - Low / 0x2 - Medium / 0x3 - High 
 pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
@@ -375,13 +378,19 @@ def realsense_connect():
     pipe.start(cfg)
 
 # Monitor user input from the terminal and perform action accordingly
-def user_keyboard_input_check():
+def user_input_monitor():
     global scale_factor
     while True:
         # Specical case: updating scale
         if scale_calib_enable == True:
             scale_factor = float(input("INFO: Type in new scale as float number\n"))
             print("INFO: New scale is ", scale_factor)
+
+        if enable_auto_set_ekf_home:
+            send_msg_to_gcs('Set EKF home with default GPS location')
+            set_default_global_origin()
+            set_default_home_position()
+            time.sleep(1) # Wait a short while for FCU to start working
 
         # Add new action here according to the key pressed.
         # Enter: Set EKF home when user press enter
@@ -395,6 +404,7 @@ def user_keyboard_input_check():
                 print("Got keyboard input", c)
         except IOError: pass
 
+
 #######################################
 # Main code starts here
 #######################################
@@ -407,8 +417,6 @@ print("INFO: Vehicle connected.")
 send_msg_to_gcs('Connecting to camera...')
 realsense_connect()
 send_msg_to_gcs('Camera connected.')
-
-print("INFO: Press Enter to automatically set EKF home at default location")
 
 if compass_enabled == 1:
     # Listen to the attitude data in aeronautical frame
@@ -429,7 +437,7 @@ if enable_update_tracking_confidence_to_gcs:
     sched.add_job(send_tracking_confidence_to_gcs, 'interval', seconds = 1/update_tracking_confidence_to_gcs_hz_default)
 
 # A separate thread to monitor user input
-user_keyboard_input_thread = threading.Thread(target=user_keyboard_input_check)
+user_keyboard_input_thread = threading.Thread(target=user_input_monitor)
 user_keyboard_input_thread.daemon = True
 user_keyboard_input_thread.start()
 
@@ -439,6 +447,8 @@ if compass_enabled == 1:
     time.sleep(1) # Wait a short while for yaw to be correctly initiated
 
 send_msg_to_gcs('Sending vision messages to FCU')
+
+print("INFO: Press Enter to set EKF home at default location")
 
 try:
     while True:
