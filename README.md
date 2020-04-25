@@ -16,8 +16,8 @@ Follow this wiki page: https://ardupilot.org/copter/docs/common-vio-tracking-cam
 
 ## ROS nodes:
 
-* **[`vision_to_mavros_node`](#vision_to_mavros_node)**: Transformation of `tf` pose data to NED frame for vision-related MAVROS topics. Full explaination and usage with Realsense T265 can be found [in this blog post](https://discuss.ardupilot.org/t/integration-of-ardupilot-and-vio-tracking-camera-part-2-complete-installation-and-indoor-non-gps-flights/43405) and [this one](https://discuss.ardupilot.org/t/indoor-non-gps-flight-using-apriltags-ros-based/42878/15) with [AprilTags](https://github.com/AprilRobotics/apriltag). 
-* **[`t265_fisheye_undistort_node`](#t265_fisheye_undistort_node)**: Undistorts and rectifies fisheye images from the Realsense T265 for other packages to consume. Full explaination and usage can be found [in this blog post](https://discuss.ardupilot.org/t/precision-landing-with-ros-realsense-t265-camera-and-apriltag-3-part-2-2/51493/4)
+* **[`vision_to_mavros_node`](#vision_to_mavros_node)**: Transformation of `tf` pose data to NED frame for vision-related MAVROS topics. Full explaination and usage with Realsense T265 can be found [in this blog post](https://discuss.ardupilot.org/t/integration-of-ardupilot-and-vio-tracking-camera-part-2-complete-installation-and-indoor-non-gps-flights/43405) and [this one](https://discuss.ardupilot.org/t/indoor-non-gps-flight-using-apriltags-ros-based/42878) with [AprilTags](https://github.com/AprilRobotics/apriltag). 
+* **[`t265_fisheye_undistort_node`](#t265_fisheye_undistort_node)**: Undistorts and rectifies fisheye images from the Realsense T265 for other packages to consume. Full explaination and usage can be found [in this blog post](https://discuss.ardupilot.org/t/precision-landing-with-ros-realsense-t265-camera-and-apriltag-3-part-2-2/51493).
 
 ## non-ROS scripts:
 
