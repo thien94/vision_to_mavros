@@ -93,13 +93,20 @@ is_vehicle_connected = False
 
 # Camera-related variables
 pipe = None
+pose_sensor = None
 
 # Data variables
 data = None
+prev_data = None
+last_pose_timestamp = 0
 H_aeroRef_aeroBody = None
 heading_north_yaw = None
 current_confidence_level = None
 current_time_us = 0
+
+# Increment everytime pose_jumping or relocalization happens
+# See here: https://github.com/IntelRealSense/librealsense/blob/master/doc/t265.md#are-there-any-t265-specific-options
+reset_counter = 0
 
 #######################################
 # Parsing user' inputs
@@ -207,7 +214,7 @@ else:
 
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
 def send_vision_position_estimate_message():
-    global is_vehicle_connected, current_time_us, H_aeroRef_aeroBody
+    global is_vehicle_connected, current_time_us, H_aeroRef_aeroBody, reset_counter
     with lock:
         if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
             rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
@@ -218,7 +225,9 @@ def send_vision_position_estimate_message():
                 H_aeroRef_aeroBody[2][3],	        # Global Z position
                 rpy_rad[0],	                        # Roll angle
                 rpy_rad[1],	                        # Pitch angle
-                rpy_rad[2]	                        # Yaw angle
+                rpy_rad[2],	                        # Yaw angle
+                np.zeros(21),
+                reset_counter                       # Estimate reset counter. Increment every time pose estimate jumps.
             )
 
             vehicle.send_mavlink(msg)
@@ -358,13 +367,15 @@ def vehicle_connect():
 # List of notification events: https://github.com/IntelRealSense/librealsense/blob/development/include/librealsense2/h/rs_types.h
 # List of notification API: https://github.com/IntelRealSense/librealsense/blob/development/common/notifications.cpp
 def realsense_notification_callback(notif):
+    global reset_counter
+    print("INFO: T265 event: " + notif)
     if notif.get_category() is rs.notification_category.pose_relocalization:
-        send_msg_to_gcs('Relocalization has happened!')
-    else:
-        print("INFO: T265 event: " + notif.get_description())
+        reset_counter += 1
+        send_msg_to_gcs('Relocalization detected')
 
 def realsense_connect():
-    global pipe
+    global pipe, pose_sensor
+    
     # Declare RealSense pipeline, encapsulating the actual device and sensors
     pipe = rs.pipeline()
 
@@ -374,7 +385,7 @@ def realsense_connect():
     # Enable the stream we are interested in
     cfg.enable_stream(rs.stream.pose) # Positional data
 
-    # Configure callback for relocalization event, extracted from https://github.com/IntelRealSense/librealsense/issues/5843#issuecomment-587370691
+    # Configure callback for relocalization event
     device = cfg.resolve(pipe).get_device()
     pose_sensor = device.first_pose_sensor()
     pose_sensor.set_notifications_callback(realsense_notification_callback)
@@ -493,6 +504,25 @@ try:
                 # Transform to aeronautic coordinates (body AND reference frame!)
                 H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
 
+                # Check for pose jump and increment reset_counter
+                if prev_data != None:
+                    delta_translation = [data.translation.x - prev_data.translation.x, data.translation.y - prev_data.translation.y, data.translation.z - prev_data.translation.z]
+                    position_displacement = np.linalg.norm(delta_translation)
+
+                    delta_t = frames.get_timestamp() - last_pose_timestamp
+                    distance_displacement = np.linalg.norm([data.velocity.x, data.velocity.y, data.velocity.z]) * delta_t
+
+                    # Pose jump is indicated when position changes more than what is possible by calculation from velocity
+                    # The behavior is not well documented yet (as of librealsense 2.34.0)
+                    if (position_displacement > distance_displacement * 1.1):
+                        send_msg_to_gcs('Pose jump detected')
+                        reset_counter += 1
+                    
+                    # print("Delta translation ", position_displacement)
+                    
+                prev_data = data
+                last_pose_timestamp = frames.get_timestamp()
+
                 # Take offsets from body's center of gravity (or IMU) to camera's origin into account
                 if body_offset_enabled == 1:
                     H_body_camera = tf.euler_matrix(0, 0, 0, 'sxyz')
@@ -518,7 +548,8 @@ except KeyboardInterrupt:
     send_msg_to_gcs('Closing the script...')  
 
 except:
-    send_msg_to_gcs('ERROR: Camera disconnected')  
+    send_msg_to_gcs('ERROR IN SCRIPT')  
+    print("Unexpected error:", sys.exc_info()[0])
 
 finally:
     pipe.stop()
