@@ -253,11 +253,11 @@ def send_vision_position_delta_message():
             send_vision_position_delta_message.prev_time_us = current_time_us
 
 # Update the changes of confidence level on GCS and terminal
-def send_tracking_confidence_to_gcs():
-    if send_tracking_confidence_to_gcs.prev_confidence_level != data.tracker_confidence:
+def update_tracking_confidence_to_gcs():
+    if update_tracking_confidence_to_gcs.prev_confidence_level != data.tracker_confidence:
         confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
         send_msg_to_gcs(confidence_status_string)
-        send_tracking_confidence_to_gcs.prev_confidence_level = data.tracker_confidence
+        update_tracking_confidence_to_gcs.prev_confidence_level = data.tracker_confidence
 
 def send_msg_to_gcs(text_to_be_sent):
     # MAV_SEVERITY: 0=EMERGENCY 1=ALERT 2=CRITICAL 3=ERROR, 4=WARNING, 5=NOTICE, 6=INFO, 7=DEBUG, 8=ENUM_END
@@ -439,8 +439,8 @@ if enable_msg_vision_position_delta:
     send_vision_position_delta_message.prev_time_us = int(round(time.time() * 1000000))
 
 if enable_update_tracking_confidence_to_gcs:
-    sched.add_job(send_tracking_confidence_to_gcs, 'interval', seconds = 1/update_tracking_confidence_to_gcs_hz_default)
-    send_tracking_confidence_to_gcs.prev_confidence_level = -1
+    sched.add_job(update_tracking_confidence_to_gcs, 'interval', seconds = 1/update_tracking_confidence_to_gcs_hz_default)
+    update_tracking_confidence_to_gcs.prev_confidence_level = -1
 
 # A separate thread to monitor user input
 user_keyboard_input_thread = threading.Thread(target=user_input_monitor)
