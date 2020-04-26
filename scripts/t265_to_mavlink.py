@@ -41,9 +41,14 @@ connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 connection_timeout_sec_default = 5
 
+# Transformation to convert different camera orientations to NED convention. Replace camera_orientation_default for your configuration.
+#   0: Forward, USB port to the right
+#   1: Downfacing, USB port to the right 
+#   2: Forward, 45 degree tilted down
+# Important note for downfacing camera: you need to tilt the vehicle's nose up a little - not flat - before you run the script, otherwise the initial yaw will be randomized, read here for more details: https://github.com/IntelRealSense/librealsense/issues/4080. Tilt the vehicle to any other sides and the yaw might not be as stable.
 camera_orientation_default = 0
 
-# Enable/disable each message/function individually
+# Enable/disable each message type individually
 enable_msg_vision_position_estimate = True
 vision_position_estimate_msg_hz_default = 15
 
@@ -73,7 +78,7 @@ scale_factor = 1.0
 compass_enabled = 0
 
 # pose data confidence: 0x0 - Failed / 0x1 - Low / 0x2 - Medium / 0x3 - High 
-pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
+pose_data_confidence_level = ('FAILED', 'Low', 'Medium', 'High')
 
 # lock for thread synchronization
 lock = threading.Lock()
@@ -175,12 +180,6 @@ if not camera_orientation:
 else:
     print("INFO: Using camera orientation", camera_orientation)
 
-# Transformation to convert different camera orientations to NED convention. Replace camera_orientation_default for your configuration.
-#   0: Forward, USB port to the right
-#   1: Downfacing, USB port to the right 
-#   2: Forward, 45 degree tilted down
-# Important note for downfacing camera: you need to tilt the vehicle's nose up a little - not flat - before you run the script, otherwise the initial yaw will be randomized, read here for more details: https://github.com/IntelRealSense/librealsense/issues/4080. Tilt the vehicle to any other sides and the yaw might not be as stable.
-
 if camera_orientation == 0:     # Forward, USB port to the right
     H_aeroRef_T265Ref   = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
     H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
@@ -253,10 +252,12 @@ def send_vision_position_delta_message():
             send_vision_position_delta_message.H_aeroRef_PrevAeroBody = H_aeroRef_aeroBody
             send_vision_position_delta_message.prev_time_us = current_time_us
 
+# Update the changes of confidence level on GCS and terminal
 def send_tracking_confidence_to_gcs():
-    global current_confidence_level
-    confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
-    send_msg_to_gcs(confidence_status_string)
+    if send_tracking_confidence_to_gcs.prev_confidence_level != data.tracker_confidence:
+        confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
+        send_msg_to_gcs(confidence_status_string)
+        send_tracking_confidence_to_gcs.prev_confidence_level = data.tracker_confidence
 
 def send_msg_to_gcs(text_to_be_sent):
     # MAV_SEVERITY: 0=EMERGENCY 1=ALERT 2=CRITICAL 3=ERROR, 4=WARNING, 5=NOTICE, 6=INFO, 7=DEBUG, 8=ENUM_END
@@ -354,6 +355,14 @@ def vehicle_connect():
         is_vehicle_connected = True
         return True
 
+# List of notification events: https://github.com/IntelRealSense/librealsense/blob/development/include/librealsense2/h/rs_types.h
+# List of notification API: https://github.com/IntelRealSense/librealsense/blob/development/common/notifications.cpp
+def realsense_notification_callback(notif):
+    if notif.get_category() is rs.notification_category.pose_relocalization:
+        send_msg_to_gcs('Relocalization has happened!')
+    else:
+        print("INFO: T265 event: " + notif.get_description())
+
 def realsense_connect():
     global pipe
     # Declare RealSense pipeline, encapsulating the actual device and sensors
@@ -363,7 +372,12 @@ def realsense_connect():
     cfg = rs.config()
 
     # Enable the stream we are interested in
-    cfg.enable_stream(rs.stream.pose) # Positional data 
+    cfg.enable_stream(rs.stream.pose) # Positional data
+
+    # Configure callback for relocalization event, extracted from https://github.com/IntelRealSense/librealsense/issues/5843#issuecomment-587370691
+    device = cfg.resolve(pipe).get_device()
+    pose_sensor = device.first_pose_sensor()
+    pose_sensor.set_notifications_callback(realsense_notification_callback)
 
     # Start streaming with requested config
     pipe.start(cfg)
@@ -426,6 +440,7 @@ if enable_msg_vision_position_delta:
 
 if enable_update_tracking_confidence_to_gcs:
     sched.add_job(send_tracking_confidence_to_gcs, 'interval', seconds = 1/update_tracking_confidence_to_gcs_hz_default)
+    send_tracking_confidence_to_gcs.prev_confidence_level = -1
 
 # A separate thread to monitor user input
 user_keyboard_input_thread = threading.Thread(target=user_input_monitor)
