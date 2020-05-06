@@ -106,7 +106,8 @@ current_time_us = 0
 
 # Increment everytime pose_jumping or relocalization happens
 # See here: https://github.com/IntelRealSense/librealsense/blob/master/doc/t265.md#are-there-any-t265-specific-options
-reset_counter = 0
+# For AP, a non-zero "reset_counter" would mean that we could be sure that the user's setup was using mavlink2
+reset_counter = 1
 
 #######################################
 # Parsing user' inputs
