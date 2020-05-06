@@ -12,9 +12,9 @@ using namespace std;
 
 enum class CameraSide { LEFT, RIGHT };
 
-//
+//////////////////////////////////////////////////
 // Declare all the calibration matrices as Mat variables.
-//
+//////////////////////////////////////////////////
 Mat lmapx, lmapy, rmapx, rmapy;
 
 image_transport::Publisher pub_img_rect_left, pub_img_rect_right;
@@ -23,11 +23,11 @@ sensor_msgs::CameraInfo output_camera_info_left, output_camera_info_right;
 
 ros::Publisher left_camera_info_output_pub, right_camera_info_output_pub;
 
-//
+//////////////////////////////////////////////////
 // This function computes all the projection matrices and the rectification transformations 
 // using the stereoRectify and initUndistortRectifyMap functions respectively.
 // See documentation for stereoRectify: https://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html#stereorectify
-//
+//////////////////////////////////////////////////
 void init_rectification_map(string param_file_path) 
 {
   Mat Q, P1, P2;
@@ -66,34 +66,34 @@ void init_rectification_map(string param_file_path)
   fisheye::initUndistortRectifyMap(K2, D2, R2, P2, output_img_size, CV_32FC1, rmapx, rmapy);
 
   // Copy the parameters for rectified images to the camera_info messages
-  output_camera_info_left.width = size_output[0];
-  output_camera_info_left.height = size_output[1];
-  output_camera_info_left.D = vector<double>(5, 0);
+  output_camera_info_left.width   = size_output[0];
+  output_camera_info_left.height  = size_output[1];
+  output_camera_info_left.D       = vector<double>(5, 0);
 
-  output_camera_info_right.width = size_output[0];
+  output_camera_info_right.width  = size_output[0];
   output_camera_info_right.height = size_output[1];
-  output_camera_info_right.D = vector<double>(5, 0);
+  output_camera_info_right.D      = vector<double>(5, 0);
 
   for (int i = 0; i < 9; i++)
   {
-    output_camera_info_left.K[i] = K1.at<double>(i);
+    output_camera_info_left.K[i]  = K1.at<double>(i);
     output_camera_info_right.K[i] = K2.at<double>(i);
-    output_camera_info_left.R[i] = R1.at<double>(i);
+    output_camera_info_left.R[i]  = R1.at<double>(i);
     output_camera_info_right.R[i] = R2.at<double>(i);
   }  
   for (int i = 0; i < 12; i++)
   {
-    output_camera_info_left.P[i] = P1.at<double>(i);
+    output_camera_info_left.P[i]  = P1.at<double>(i);
     output_camera_info_right.P[i] = P2.at<double>(i);
   }
   
   ROS_INFO("Initialization complete. Publishing rectified images and camera_info when raw images arrive...");
 }
 
-//
+//////////////////////////////////////////////////
 // This function undistorts and rectifies the src image into dst. 
 // The homographic mappings lmapx, lmapy, rmapx, and rmapy are found from OpenCV’s initUndistortRectifyMap function.
-//
+//////////////////////////////////////////////////
 void undistort_rectify_image(Mat& src, Mat& dst, const CameraSide& side)
 {
   if (side == CameraSide::LEFT) 
@@ -106,14 +106,14 @@ void undistort_rectify_image(Mat& src, Mat& dst, const CameraSide& side)
   }
 }
 
-//
+//////////////////////////////////////////////////
 // This callback function takes a pair of raw stereo images as inputs, 
 // then undistorts and rectifies the images using the undistort_rectify_image function 
 // defined above and publishes on the rectified image topic using pub_img_left/right.
-//
+//////////////////////////////////////////////////
 void synched_img_callback(const sensor_msgs::ImageConstPtr& msg_left, const sensor_msgs::ImageConstPtr& msg_right)
 {
-    Mat tmp_left = cv_bridge::toCvShare(msg_left, "bgr8")->image;
+    Mat tmp_left  = cv_bridge::toCvShare(msg_left, "bgr8")->image;
     Mat tmp_right = cv_bridge::toCvShare(msg_right, "bgr8")->image;
 
     Mat dst_left, dst_right;
@@ -121,7 +121,7 @@ void synched_img_callback(const sensor_msgs::ImageConstPtr& msg_left, const sens
     undistort_rectify_image(tmp_left, dst_left, CameraSide::LEFT);
     undistort_rectify_image(tmp_right, dst_right, CameraSide::RIGHT);
 
-    sensor_msgs::ImagePtr rect_img_left = cv_bridge::CvImage(msg_left->header, "bgr8", dst_left).toImageMsg();
+    sensor_msgs::ImagePtr rect_img_left  = cv_bridge::CvImage(msg_left->header, "bgr8", dst_left).toImageMsg();
     sensor_msgs::ImagePtr rect_img_right = cv_bridge::CvImage(msg_right->header, "bgr8", dst_right).toImageMsg();
 
     pub_img_rect_left.publish(rect_img_left);
@@ -169,10 +169,10 @@ int main(int argc, char **argv)
   sync.registerCallback(boost::bind(&synched_img_callback, _1, _2));
 
   // The output data include rectified images and their corresponding camera info
-  pub_img_rect_left  = it.advertise("/camera/fisheye1/rect/image",  1);
+  pub_img_rect_left  = it.advertise("/camera/fisheye1/rect/image", 1);
   pub_img_rect_right = it.advertise("/camera/fisheye2/rect/image", 1);
 
-  left_camera_info_output_pub = nh.advertise<sensor_msgs::CameraInfo>("/camera/fisheye1/rect/camera_info", 1);
+  left_camera_info_output_pub  = nh.advertise<sensor_msgs::CameraInfo>("/camera/fisheye1/rect/camera_info", 1);
   right_camera_info_output_pub = nh.advertise<sensor_msgs::CameraInfo>("/camera/fisheye2/rect/camera_info", 1);
 
   // Processing start

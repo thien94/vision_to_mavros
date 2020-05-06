@@ -170,7 +170,7 @@ int main(int argc, char** argv)
     ros::Time now = ros::Time(0);
 
     //////////////////////////////////////////////////
-    // Publish vision_pose_estimate message if transform is available
+    // Publish vision_position_estimate message if transform is available
     //////////////////////////////////////////////////
     try
     {
@@ -253,7 +253,7 @@ int main(int argc, char** argv)
 
           mavros_msgs::LandingTarget msg_landing_target;
 
-          // Setup the landing target message
+          // Setup the landing target message according to the relative protocol: https://mavlink.io/en/services/landing_target.html#camera_image_relative
           msg_landing_target.header.frame_id = transform.frame_id_;
           msg_landing_target.header.stamp = transform.stamp_;
           msg_landing_target.target_num = 0;
@@ -272,8 +272,10 @@ int main(int argc, char** argv)
       }
     }
 
+    //////////////////////////////////////////////////
     // Repeat
+    //////////////////////////////////////////////////
     rate.sleep();
   }
   return 0;
-};
+}

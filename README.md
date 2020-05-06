@@ -1,6 +1,6 @@
 A collection of [ROS](https://www.ros.org/) and non-ROS (Python, cpp) code that converts data from vision-based system (external localization system like fiducial tags, VIO, SLAM, or depth image) to corresponding [MAVROS](http://wiki.ros.org/mavros) topics or [MAVLink](https://mavlink.io/en/) messages that can be consumed by a flight control stack to support precise localization and navigation tasks.
 
-Most of the codes have been tested and come with instructions to work with [ArduPilot](https://ardupilot.org/). The main supported sensor is the [Intel Realsense Tracking camera T265](https://www.intelrealsense.com/tracking-camera-t265/).
+The code has been tested and come with instructions to be used with [ArduPilot](https://ardupilot.org/). The main sensor is the [Intel Realsense Tracking camera T265](https://www.intelrealsense.com/tracking-camera-t265/).
 
 --------------------------------------------------------------------------
 # Installation and setup with ArduPilot:
