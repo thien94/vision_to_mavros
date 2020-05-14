@@ -32,7 +32,9 @@ int main(int argc, char** argv)
 
   std::string output_frame_id = "/leica";
 
-  geometry_msgs::PoseStamped msg_body_pose;
+  geometry_msgs::PoseStamped msg_body_pose, msg_leica_pose;
+  ros::Publisher camera_pose_pub = node.advertise<geometry_msgs::PoseStamped>("camera_link_pose", 10);
+  ros::Publisher leica_pose_pub = node.advertise<geometry_msgs::PoseStamped>("leica_pose", 10);
 
   double output_rate = 20, roll_cam = 0, pitch_cam = 0, yaw_cam = 1.5707963, gamma_world = -1.5707963;
 
@@ -100,6 +102,27 @@ int main(int argc, char** argv)
     //////////////////////////////////////////////////
     try
     {
+        static tf::Vector3 position_orig, position_body;
+
+        static tf::Quaternion quat_orig, quat_body, quat_offset;
+
+        // Create PoseStamped message to be sent for leica
+        tf_listener.lookupTransform("/map", "leica_rel", now, transform);
+        position_orig = transform.getOrigin();
+        quat_orig = transform.getRotation();
+        msg_leica_pose.header.stamp = transform.stamp_;
+        msg_leica_pose.header.frame_id = transform.frame_id_;
+        msg_leica_pose.pose.position.x = position_orig.getX();
+        msg_leica_pose.pose.position.y = position_orig.getY();
+        msg_leica_pose.pose.position.z = position_orig.getZ();
+        msg_leica_pose.pose.orientation.x = quat_orig.getX();
+        msg_leica_pose.pose.orientation.y = quat_orig.getY();
+        msg_leica_pose.pose.orientation.z = quat_orig.getZ();
+        msg_leica_pose.pose.orientation.w = quat_orig.getW();
+
+        // Publish pose of body frame in world frame
+        leica_pose_pub.publish(msg_leica_pose);
+
       // lookupTransform(frame_2, frame_1, at_this_time, this_transform)
       //    will give the transfrom from frame_1 to frame_2
       tf_listener.lookupTransform(target_frame_id, source_frame_id, now, transform);
@@ -108,11 +131,6 @@ int main(int argc, char** argv)
       // if (last_tf_time < transform.stamp_)
       {
         last_tf_time = transform.stamp_;
-
-        static tf::Vector3 position_orig, position_body;
-
-        static tf::Quaternion quat_orig, quat_body, quat_offset = tf::createIdentityQuaternion();
-
         // For anchor_at_leica_MH01_2020-02-24-20-19-39.bag 
         // static tf::Matrix3x3 rot_mat (
         //   -0.896,  0.307, -0.32,
@@ -170,28 +188,141 @@ int main(int argc, char** argv)
         // static tf::Vector3 position_offset (0.012, -0.14, 0.461);
 
         // // For AuRO/MH02
-        static tf::Matrix3x3 rot_mat (
-        -0.925,  0.045, -0.376,
-        -0.045, -0.999, -0.009,
-        -0.376,  0.008,  0.926);
-        static tf::Vector3 position_offset (4.595,-1.418, 1.07);
+        // static tf::Matrix3x3 rot_mat (
+        // -0.925,  0.045, -0.376,
+        // -0.045, -0.999, -0.009,
+        // -0.376,  0.008,  0.926);
+        // static tf::Vector3 position_offset (4.595,-1.418, 1.07);
 
-        // Ground truth for anchor position
-        static tf::Vector3 true_anchor_position (0, 0, 0);
-        static tf::Vector3 aligned_true_anchor_position = rot_mat * true_anchor_position + position_offset;
+        // // For AuRO/VC01_001_much_bigger
+        // static tf::Matrix3x3 rot_mat (
+        //   0.983,  0.035,  0.183,
+        //  -0.031,  0.999, -0.026,
+        //  -0.183,  0.02 ,  0.983);
+        // static tf::Vector3 position_offset (0.031, -0.001, 0.495);
+
+        // // For AuRO/VC01_003_bigger
+        // static tf::Matrix3x3 rot_mat (
+        // 0.995, -0.077,  0.07 ,
+        // 0.075,  0.996,  0.038,
+        // -0.073, -0.033,  0.997);
+        // static tf::Vector3 position_offset (0.046, 0.014, 0.265);
+
+        // // For AuRO/VC01_004_smaller
+        // static tf::Matrix3x3 rot_mat (
+        //   0.989,  0.049,  0.142,
+        //   -0.039,  0.996, -0.075,
+        //   -0.145,  0.069,  0.987);
+        // static tf::Vector3 position_offset (0.03, -0.03, 0.655);
+
+        // // For AuRO/VC01_005_smaller
+        // static tf::Matrix3x3 rot_mat (
+        //   0.995, -0.076,  0.068,
+        //   0.073,  0.997,  0.04 ,
+        //  -0.071, -0.035,  0.997);
+        // static tf::Vector3 position_offset (0.048, 0.013, 0.263);
+
+        // // For AuRO/proposed Mono UWB/Cor_01
+        // static tf::Matrix3x3 rot_mat (
+        //   0.995,  0.011,  0.098,
+        //  -0.022,  0.994,  0.105,
+        //  -0.096, -0.107,  0.99 );
+        // static tf::Vector3 position_offset (0.0, 0.0, 0.276);
+        // static tf::Vector3 position_anchor_offset (0,-0.045, 0.276);
+
+        // // For AuRO/t265/Cor_01
+        // static tf::Matrix3x3 rot_mat (
+        //   1.   , -0.017, -0.009,
+        //   0.018,  0.663,  0.749,
+        //  -0.007, -0.749,  0.663);
+        // static tf::Vector3 position_offset (0.0, 0.0, 0.0);
+        // static tf::Vector3 position_anchor_offset (0,-0.045, 0.276);
+
+        // // For AuRO/vins/Cor_01
+        // static tf::Matrix3x3 rot_mat (
+        //   0.013,  1.   ,  0.008,
+        //  -0.859,  0.007,  0.512,
+        //   0.512, -0.014,  0.859);
+        // static tf::Vector3 position_offset (0.0, 0.0, 0.0);
+        // static tf::Vector3 position_anchor_offset (0,-0.045, 0.276);
+
+        // // For AuRO/Proposed/Cor_02_
+        // static tf::Matrix3x3 rot_mat (
+        //   0.996, -0.028,  0.081,
+        //   0.022,  0.996,  0.084,
+        //  -0.083, -0.082,  0.993);
+        // static tf::Vector3 position_offset (0, 0, 0.149);
+        // static tf::Vector3 position_anchor_offset (0,-0.045, 0.276);
+
+        // // For AuRO/t265/Cor_02_
+        // static tf::Matrix3x3 rot_mat (
+        //   1.   ,  0.005, -0.013,
+        //  -0.005,  1.   ,  0.003,
+        //   0.013, -0.003,  1.   );
+        // static tf::Vector3 position_offset (0.0, 0.0, 0);
+        // static tf::Vector3 position_anchor_offset (0,-0.045, 0.276);
+
+        // // For AuRO/VINS/Cor_02_
+        // static tf::Matrix3x3 rot_mat (
+        // -0.009,  1.   , -0.005,
+        // -0.888, -0.01 , -0.46 ,
+        // -0.46 , -0.   ,  0.888);
+        // static tf::Vector3 position_offset (0.0, 0, -0.223);
+        // static tf::Vector3 position_anchor_offset (0,-0.045, 0.276);
+
+        // // For AuRO/Proposed/OP_03
+        // static tf::Matrix3x3 rot_mat (
+        //   0.985,  0.105, -0.137,
+        //  -0.112,  0.992, -0.049,
+        //   0.131,  0.064,  0.989);
+        // static tf::Vector3 position_offset (-0.082, 0.6, 0.498);
+        // static tf::Vector3 position_anchor_offset (0,-0.045, 0.276);
+
+        // // For AuRO/t265/OP_03
+        // static tf::Matrix3x3 rot_mat (
+        //   1.   ,  0.005, -0.013,
+        //  -0.005,  1.   ,  0.003,
+        //   0.013, -0.003,  1.   );
+        // static tf::Vector3 position_offset (0,0,0);
+        // static tf::Vector3 position_anchor_offset (0,-0.045, 0.276);
+
+        // // For AuRO/VINS/OP_03
+        // static tf::Matrix3x3 rot_mat (
+        //   -0.002, -1.   , -0.003,
+        //   1.   , -0.002,  0.003,
+        //  -0.003, -0.003,  1.   );
+        // static tf::Vector3 position_offset (-0.16, 0.032, 0.009);
+        // static tf::Vector3 position_anchor_offset (0,-0.045, 0.276);
+
+        // // For RAL2020/Cor_01/VIU all/
+        static tf::Matrix3x3 rot_mat (
+          1.   ,  0.023,  0.013,
+        -0.026,  0.947,  0.32 ,
+        -0.005, -0.321,  0.9479);
+        static tf::Vector3 position_offset (0.0, 0.0, 0);
+        static tf::Vector3 position_anchor_offset (0,-0.045, 0.276);
+
+        // // For RAL2020/Cor_01/VINS_Mono/
+        // static tf::Matrix3x3 rot_mat (
+        //   1.   ,  0.015,  0.016,
+        //  -0.022,  0.67 ,  0.742,
+        //   0.   , -0.742,  0.67 );
+        // static tf::Vector3 position_offset (0.0, 0.0, 0);
+        // static tf::Vector3 position_anchor_offset (0,-0.045, 0.276);
 
 
         // 1) Rotation from original world frame to world frame with y forward.
         // 2) Rotation from camera to body frame.
         // See the full rotation matrix at https://en.wikipedia.org/wiki/Rotation_matrix#Basic_rotations
-        rot_mat.getRotation(quat_offset);
-
+        quat_offset.setRPY(0,0,0);
         position_orig = transform.getOrigin();
         quat_orig = transform.getRotation();
 
         position_body = rot_mat * position_orig + position_offset;
         quat_body = quat_orig;
-        
+        // quat_body = quat_offset * quat_orig;
+        // quat_body.normalize();
+
         static tf::TransformBroadcaster br;
         static tf::Transform tf_aligned_ground_truth;
         tf_aligned_ground_truth.setOrigin(position_body);
@@ -201,37 +332,65 @@ int main(int argc, char** argv)
           last_tf_time,
           "map",
           output_frame_id));
+        
+        // Create PoseStamped message to be sent for uwbs
+        msg_body_pose.header.stamp = transform.stamp_;
+        msg_body_pose.header.frame_id = "map";
+        msg_body_pose.pose.position.x = position_body.getX();
+        msg_body_pose.pose.position.y = position_body.getY();
+        msg_body_pose.pose.position.z = position_body.getZ();
+        msg_body_pose.pose.orientation.x = quat_body.getX();
+        msg_body_pose.pose.orientation.y = quat_body.getY();
+        msg_body_pose.pose.orientation.z = quat_body.getZ();
+        msg_body_pose.pose.orientation.w = quat_body.getW();
 
+        // Publish pose of body frame in world frame
+        camera_pose_pub.publish(msg_body_pose);
+
+        // Publish position of uwb 100 and 102
         tf_aligned_ground_truth.setIdentity();
-        tf_aligned_ground_truth.setOrigin(aligned_true_anchor_position);
+
+        // Republish anchor 100 true
+        tf_listener.lookupTransform(target_frame_id, "vicon/uwb100", now, transform);
+        position_orig = transform.getOrigin();
+        tf_aligned_ground_truth.setOrigin(position_orig);
         br.sendTransform(tf::StampedTransform(
           tf_aligned_ground_truth,
           last_tf_time,
           "map",
-          "anchor100"));
-        
-        // To-do: test fixed length path publisher
-        // msg_body_pose.header.stamp = transform.stamp_;
-        // msg_body_pose.header.frame_id = "/vicon";
-        // msg_body_pose.pose.position.x = position_body.getX();
-        // msg_body_pose.pose.position.y = position_body.getY();
-        // msg_body_pose.pose.position.z = position_body.getZ();
-        // msg_body_pose.pose.orientation.x = quat_body.getX();
-        // msg_body_pose.pose.orientation.y = quat_body.getY();
-        // msg_body_pose.pose.orientation.z = quat_body.getZ();
-        // msg_body_pose.pose.orientation.w = quat_body.getW();
+          "true_100"));
 
-        // // Publish trajectory path for visualization
-        // body_path.header.stamp = msg_body_pose.header.stamp;
-        // body_path.header.frame_id = "/map";
-        // body_path.poses.push_back(msg_body_pose);
+        // Publish aligned 100 estimate
+        tf_listener.lookupTransform(target_frame_id, "uwb100", now, transform);
+        position_orig = transform.getOrigin();
+        position_body = rot_mat * position_orig + position_anchor_offset;
+        tf_aligned_ground_truth.setOrigin(position_body);
+        br.sendTransform(tf::StampedTransform(
+          tf_aligned_ground_truth,
+          last_tf_time,
+          "map",
+          "estimate_100"));
 
-        // // if (body_path.poses.size() > 10)
-        // {
-        //   body_path.poses.clear();
-        // }
+        // Republish anchor 102 true
+        tf_listener.lookupTransform(target_frame_id, "vicon/uwb102", now, transform);
+        position_orig = transform.getOrigin();
+        tf_aligned_ground_truth.setOrigin(position_orig);
+        br.sendTransform(tf::StampedTransform(
+          tf_aligned_ground_truth,
+          last_tf_time,
+          "map",
+          "true_102"));
 
-        // body_path_pubisher.publish(body_path);
+        // Publish aligned 102 estimate
+        tf_listener.lookupTransform(target_frame_id, "uwb102", now, transform);
+        position_orig = transform.getOrigin();
+        position_body = rot_mat * position_orig + position_anchor_offset;
+        tf_aligned_ground_truth.setOrigin(position_body);
+        br.sendTransform(tf::StampedTransform(
+          tf_aligned_ground_truth,
+          last_tf_time,
+          "map",
+          "estimate_102"));
       }
     }
     catch (tf::TransformException ex)
