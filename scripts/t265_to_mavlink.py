@@ -48,13 +48,19 @@ connection_timeout_sec_default = 5
 # Important note for downfacing camera: you need to tilt the vehicle's nose up a little - not flat - before you run the script, otherwise the initial yaw will be randomized, read here for more details: https://github.com/IntelRealSense/librealsense/issues/4080. Tilt the vehicle to any other sides and the yaw might not be as stable.
 camera_orientation_default = 0
 
-# Enable/disable each message type individually
+# https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
 enable_msg_vision_position_estimate = True
 vision_position_estimate_msg_hz_default = 15
 
+# https://mavlink.io/en/messages/ardupilotmega.html#VISION_POSITION_DELTA
 enable_msg_vision_position_delta = False
 vision_position_delta_msg_hz_default = 15
 
+# https://mavlink.io/en/messages/common.html#VISION_SPEED_ESTIMATE
+enable_msg_vision_speed_estimate = True
+vision_speed_estimate_msg_hz_default = 15
+
+# https://mavlink.io/en/messages/common.html#STATUSTEXT
 enable_update_tracking_confidence_to_gcs = True
 update_tracking_confidence_to_gcs_hz_default = 1
 
@@ -100,6 +106,7 @@ data = None
 prev_data = None
 last_pose_timestamp = 0
 H_aeroRef_aeroBody = None
+V_aeroRef_aeroBody = None
 heading_north_yaw = None
 current_confidence_level = None
 current_time_us = 0
@@ -122,6 +129,8 @@ parser.add_argument('--vision_position_estimate_msg_hz', type=float,
                     help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
 parser.add_argument('--vision_position_delta_msg_hz', type=float,
                     help="Update frequency for VISION_POSITION_DELTA message. If not specified, a default value will be used.")
+parser.add_argument('--vision_speed_estimate_msg_hz', type=float,
+                    help="Update frequency for VISION_SPEED_DELTA message. If not specified, a default value will be used.")
 parser.add_argument('--scale_calib_enable', default=False, action='store_true',
                     help="Scale calibration. Only run while NOT in flight")
 parser.add_argument('--camera_orientation', type=int,
@@ -135,6 +144,7 @@ connection_string = args.connect
 connection_baudrate = args.baudrate
 vision_position_estimate_msg_hz = args.vision_position_estimate_msg_hz
 vision_position_delta_msg_hz = args.vision_position_delta_msg_hz
+vision_speed_estimate_msg_hz = args.vision_speed_estimate_msg_hz
 scale_calib_enable = args.scale_calib_enable
 camera_orientation = args.camera_orientation
 debug_enable = args.debug_enable
@@ -163,6 +173,12 @@ if not vision_position_delta_msg_hz:
     print("INFO: Using default vision_position_delta_msg_hz", vision_position_delta_msg_hz)
 else:
     print("INFO: Using vision_position_delta_msg_hz", vision_position_delta_msg_hz)
+
+if not vision_speed_estimate_msg_hz:
+    vision_speed_estimate_msg_hz = vision_speed_estimate_msg_hz_default
+    print("INFO: Using default vision_speed_estimate_msg_hz", vision_speed_estimate_msg_hz)
+else:
+    print("INFO: Using vision_speed_estimate_msg_hz", vision_speed_estimate_msg_hz)
 
 if body_offset_enabled == 1:
     print("INFO: Using camera position offset: Enabled, x y z is", body_offset_x, body_offset_y, body_offset_z)
@@ -220,17 +236,16 @@ def send_vision_position_estimate_message():
         if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
             rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
             msg = vehicle.message_factory.vision_position_estimate_encode(
-                current_time_us,                    # us Timestamp (UNIX time or time since system boot)
-                H_aeroRef_aeroBody[0][3],	        # Global X position
-                H_aeroRef_aeroBody[1][3],           # Global Y position
-                H_aeroRef_aeroBody[2][3],	        # Global Z position
-                rpy_rad[0],	                        # Roll angle
-                rpy_rad[1],	                        # Pitch angle
-                rpy_rad[2],	                        # Yaw angle
-                np.zeros(21),
-                reset_counter                       # Estimate reset counter. Increment every time pose estimate jumps.
+                current_time_us,            # us Timestamp (UNIX time or time since system boot)
+                H_aeroRef_aeroBody[0][3],   # Global X position
+                H_aeroRef_aeroBody[1][3],   # Global Y position
+                H_aeroRef_aeroBody[2][3],   # Global Z position
+                rpy_rad[0],	                # Roll angle
+                rpy_rad[1],	                # Pitch angle
+                rpy_rad[2],	                # Yaw angle
+                np.zeros(21),               # covariance
+                reset_counter               # Estimate reset counter. Increment every time pose estimate jumps.
             )
-
             vehicle.send_mavlink(msg)
             vehicle.flush()
 
@@ -262,6 +277,22 @@ def send_vision_position_delta_message():
             send_vision_position_delta_message.H_aeroRef_PrevAeroBody = H_aeroRef_aeroBody
             send_vision_position_delta_message.prev_time_us = current_time_us
 
+# https://mavlink.io/en/messages/common.html#VISION_SPEED_ESTIMATE
+def send_vision_speed_estimate_message():
+    global is_vehicle_connected, current_time_us, V_aeroRef_aeroBody, reset_counter
+    with lock:
+        if is_vehicle_connected == True and V_aeroRef_aeroBody is not None:
+            msg = vehicle.message_factory.vision_speed_estimate_encode(
+                current_time_us,            # us Timestamp (UNIX time or time since system boot)
+                V_aeroRef_aeroBody[0][3],   # Global X speed
+                V_aeroRef_aeroBody[1][3],   # Global Y speed
+                V_aeroRef_aeroBody[2][3],   # Global Z speed
+                np.zeros(9),               # covariance
+                reset_counter               # Estimate reset counter. Increment every time pose estimate jumps.
+            )
+            vehicle.send_mavlink(msg)
+            vehicle.flush()
+
 # Update the changes of confidence level on GCS and terminal
 def update_tracking_confidence_to_gcs():
     if update_tracking_confidence_to_gcs.prev_confidence_level != data.tracker_confidence:
@@ -269,6 +300,7 @@ def update_tracking_confidence_to_gcs():
         send_msg_to_gcs(confidence_status_string)
         update_tracking_confidence_to_gcs.prev_confidence_level = data.tracker_confidence
 
+# https://mavlink.io/en/messages/common.html#STATUSTEXT
 def send_msg_to_gcs(text_to_be_sent):
     # MAV_SEVERITY: 0=EMERGENCY 1=ALERT 2=CRITICAL 3=ERROR, 4=WARNING, 5=NOTICE, 6=INFO, 7=DEBUG, 8=ENUM_END
     # Defined here: https://mavlink.io/en/messages/common.html#MAV_SEVERITY
@@ -450,6 +482,9 @@ if enable_msg_vision_position_delta:
     send_vision_position_delta_message.H_aeroRef_PrevAeroBody = tf.quaternion_matrix([1,0,0,0]) 
     send_vision_position_delta_message.prev_time_us = int(round(time.time() * 1000000))
 
+if enable_msg_vision_speed_estimate:
+    sched.add_job(send_vision_speed_estimate_message, 'interval', seconds = 1/vision_speed_estimate_msg_hz)
+
 if enable_update_tracking_confidence_to_gcs:
     sched.add_job(update_tracking_confidence_to_gcs, 'interval', seconds = 1/update_tracking_confidence_to_gcs_hz_default)
     update_tracking_confidence_to_gcs.prev_confidence_level = -1
@@ -504,6 +539,13 @@ try:
 
                 # Transform to aeronautic coordinates (body AND reference frame!)
                 H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
+
+                # Calculate GLOBAL XYZ speed (speed from T265 is already GLOBAL)
+                V_aeroRef_aeroBody = tf.quaternion_matrix([0,0,0,1])
+                V_aeroRef_aeroBody[0][3] = data.velocity.x
+                V_aeroRef_aeroBody[1][3] = data.velocity.y
+                V_aeroRef_aeroBody[2][3] = data.velocity.z
+                V_aeroRef_aeroBody = H_aeroRef_T265Ref.dot(V_aeroRef_aeroBody)
 
                 # Check for pose jump and increment reset_counter
                 if prev_data != None:
