@@ -541,7 +541,7 @@ try:
                 H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
 
                 # Calculate GLOBAL XYZ speed (speed from T265 is already GLOBAL)
-                V_aeroRef_aeroBody = tf.quaternion_matrix([0,0,0,1])
+                V_aeroRef_aeroBody = tf.quaternion_matrix([1,0,0,0])
                 V_aeroRef_aeroBody[0][3] = data.velocity.x
                 V_aeroRef_aeroBody[1][3] = data.velocity.y
                 V_aeroRef_aeroBody[2][3] = data.velocity.z
