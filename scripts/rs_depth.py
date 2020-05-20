@@ -37,7 +37,7 @@ try:
         frames = pipeline.wait_for_frames()
         depth = frames.get_depth_frame()
 
-        if not depth: 
+        if not depth:
             continue
 
         # Print a simple text-based representation of the image, by breaking it into WIDTH_RATIO x HEIGHT_RATIO pixel regions and approximating the coverage of pixels within MAX_DEPTH
