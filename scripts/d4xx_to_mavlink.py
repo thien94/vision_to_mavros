@@ -48,7 +48,18 @@ pixels       = " .:nhBXWW"      # The text-based representation of depth
 
 # Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
 # See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
-distances = np.zeros((72,), dtype=np.uint16)
+DISTANCES_ARRAY_LEN = 72
+distances = np.zeros((DISTANCES_ARRAY_LEN,), dtype=np.uint16)
+
+# Sensor-specific parameter, for D435: https://www.intelrealsense.com/depth-camera-d435/
+HFOV        = 87
+DEPTH_RANGE = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
+MIN_DEPTH   = int(DEPTH_RANGE[0] * 100)  # In cm
+MAX_DEPTH   = int(DEPTH_RANGE[1] * 100)  # In cm, being a little conservative
+
+# In the case of a forward facing camera with a horizontal wide view:
+angle_offset = -(HFOV / 2)
+increment_f  = HFOV / DISTANCES_ARRAY_LEN
 
 ######################################################
 ##                    Parameters                    ##
@@ -62,9 +73,6 @@ connection_timeout_sec_default = 5
 camera_orientation_default = 0
 
 # Enable/disable each message/function individually
-enable_msg_vision_position_estimate = True
-vision_position_estimate_msg_hz_default = 15
-
 enable_msg_obstacle_distance = True
 obstacle_distance_msg_hz_default = 15
 
@@ -81,17 +89,10 @@ body_offset_x = 0  # In meters (m)
 body_offset_y = 0  # In meters (m)
 body_offset_z = 0  # In meters (m)
 
-# Global scale factor, position x y z will be scaled up/down by this factor
-scale_factor = 1.0
-
-# Enable using yaw from compass to align north (zero degree is facing north)
-compass_enabled = 0
-
-# pose data confidence: 0x0 - Failed / 0x1 - Low / 0x2 - Medium / 0x3 - High 
-pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
-
 # lock for thread synchronization
 lock = threading.Lock()
+
+debug_enable = True
 
 #######################################
 # Global variables
@@ -106,9 +107,6 @@ pipe = None
 
 # Data variables
 data = None
-H_aeroRef_aeroBody = None
-heading_north_yaw = None
-current_confidence_level = None
 current_time_us = 0
 
 #######################################
@@ -120,26 +118,14 @@ parser.add_argument('--connect',
                     help="Vehicle connection target string. If not specified, a default string will be used.")
 parser.add_argument('--baudrate', type=float,
                     help="Vehicle connection baudrate. If not specified, a default value will be used.")
-parser.add_argument('--vision_position_estimate_msg_hz', type=float,
-                    help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
 parser.add_argument('--obstacle_distance_msg_hz', type=float,
                     help="Update frequency for OBSTACLE_DISTANCE message. If not specified, a default value will be used.")
-parser.add_argument('--scale_calib_enable', default=False, action='store_true',
-                    help="Scale calibration. Only run while NOT in flight")
-parser.add_argument('--camera_orientation', type=int,
-                    help="Configuration for camera orientation. Currently supported: forward, usb port to the right - 0; downward, usb port to the right - 1, 2: forward tilted down 45deg")
-parser.add_argument('--debug_enable',type=int,
-                    help="Enable debug messages on terminal")
 
 args = parser.parse_args()
 
 connection_string = args.connect
 connection_baudrate = args.baudrate
-vision_position_estimate_msg_hz = args.vision_position_estimate_msg_hz
 obstacle_distance_msg_hz = args.obstacle_distance_msg_hz
-scale_calib_enable = args.scale_calib_enable
-camera_orientation = args.camera_orientation
-debug_enable = args.debug_enable
 
 # Using default values if no specified inputs
 if not connection_string:
@@ -153,61 +139,12 @@ if not connection_baudrate:
     print("INFO: Using default connection_baudrate", connection_baudrate)
 else:
     print("INFO: Using connection_baudrate", connection_baudrate)
-
-if not vision_position_estimate_msg_hz:
-    vision_position_estimate_msg_hz = vision_position_estimate_msg_hz_default
-    print("INFO: Using default vision_position_estimate_msg_hz", vision_position_estimate_msg_hz)
-else:
-    print("INFO: Using vision_position_estimate_msg_hz", vision_position_estimate_msg_hz)
     
 if not obstacle_distance_msg_hz:
     obstacle_distance_msg_hz = obstacle_distance_msg_hz_default
     print("INFO: Using default obstacle_distance_msg_hz", obstacle_distance_msg_hz)
 else:
     print("INFO: Using obstacle_distance_msg_hz", obstacle_distance_msg_hz)
-
-if body_offset_enabled == 1:
-    print("INFO: Using camera position offset: Enabled, x y z is", body_offset_x, body_offset_y, body_offset_z)
-else:
-    print("INFO: Using camera position offset: Disabled")
-
-if compass_enabled == 1:
-    print("INFO: Using compass: Enabled. Heading will be aligned to north.")
-else:
-    print("INFO: Using compass: Disabled")
-
-if scale_calib_enable == True:
-    print("\nINFO: SCALE CALIBRATION PROCESS. DO NOT RUN DURING FLIGHT.\nINFO: TYPE IN NEW SCALE IN FLOATING POINT FORMAT\n")
-else:
-    if scale_factor == 1.0:
-        print("INFO: Using default scale factor", scale_factor)
-    else:
-        print("INFO: Using scale factor", scale_factor)
-
-if not camera_orientation:
-    camera_orientation = camera_orientation_default
-    print("INFO: Using default camera orientation", camera_orientation)
-else:
-    print("INFO: Using camera orientation", camera_orientation)
-
-# Transformation to convert different camera orientations to NED convention. Replace camera_orientation_default for your configuration.
-#   0: Forward, USB port to the right
-#   1: Downfacing, USB port to the right 
-#   2: Forward, 45 degree tilted down
-# Important note for downfacing camera: you need to tilt the vehicle's nose up a little - not flat - before you run the script, otherwise the initial yaw will be randomized, read here for more details: https://github.com/IntelRealSense/librealsense/issues/4080. Tilt the vehicle to any other sides and the yaw might not be as stable.
-
-if camera_orientation == 0:     # Forward, USB port to the right
-    H_aeroRef_T265Ref   = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-    H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
-elif camera_orientation == 1:   # Downfacing, USB port to the right
-    H_aeroRef_T265Ref   = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-    H_T265body_aeroBody = np.array([[0,1,0,0],[1,0,0,0],[0,0,-1,0],[0,0,0,1]])
-elif camera_orientation == 2:   # 45degree forward
-    H_aeroRef_T265Ref   = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-    H_T265body_aeroBody = (tf.euler_matrix(m.pi/4, 0, 0)).dot(np.linalg.inv(H_aeroRef_T265Ref))
-else:                           # Default is facing forward, USB port to the right
-    H_aeroRef_T265Ref   = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
-    H_T265body_aeroBody = np.linalg.inv(H_aeroRef_T265Ref)
 
 if not debug_enable:
     debug_enable = 0
@@ -221,71 +158,19 @@ else:
 # Functions
 #######################################
 
-# https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
-def send_vision_position_estimate_message():
-    global is_vehicle_connected, current_time_us, H_aeroRef_aeroBody
-    with lock:
-        if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
-            rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
-            msg = vehicle.message_factory.vision_position_estimate_encode(
-                current_time_us,                    # us Timestamp (UNIX time or time since system boot)
-                H_aeroRef_aeroBody[0][3],	        # Global X position
-                H_aeroRef_aeroBody[1][3],           # Global Y position
-                H_aeroRef_aeroBody[2][3],	        # Global Z position
-                rpy_rad[0],	                        # Roll angle
-                rpy_rad[1],	                        # Pitch angle
-                rpy_rad[2]	                        # Yaw angle
-            )
-
-            vehicle.send_mavlink(msg)
-            vehicle.flush()
-
-# https://mavlink.io/en/messages/ardupilotmega.html#VISION_POSITION_DELTA
-def send_vision_position_delta_message():
-    global is_vehicle_connected, current_time_us, current_confidence_level, H_aeroRef_aeroBody
-    with lock:
-        if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
-            # Calculate the deltas in position, attitude and time from the previous to current orientation
-            H_aeroRef_PrevAeroBody      = send_vision_position_delta_message.H_aeroRef_PrevAeroBody
-            H_PrevAeroBody_CurrAeroBody = (np.linalg.inv(H_aeroRef_PrevAeroBody)).dot(H_aeroRef_aeroBody)
-
-            delta_time_us    = current_time_us - send_vision_position_delta_message.prev_time_us
-            delta_position_m = [H_PrevAeroBody_CurrAeroBody[0][3], H_PrevAeroBody_CurrAeroBody[1][3], H_PrevAeroBody_CurrAeroBody[2][3]]
-            delta_angle_rad  = np.array( tf.euler_from_matrix(H_PrevAeroBody_CurrAeroBody, 'sxyz'))
-
-            # Send the message
-            msg = vehicle.message_factory.vision_position_delta_encode(
-                current_time_us,    # us: Timestamp (UNIX time or time since system boot)
-                delta_time_us,	    # us: Time since last reported camera frame
-                delta_angle_rad,    # float[3] in radian: Defines a rotation vector in body frame that rotates the vehicle from the previous to the current orientation
-                delta_position_m,   # float[3] in m: Change in position from previous to current frame rotated into body frame (0=forward, 1=right, 2=down)
-                current_confidence_level # Normalised confidence value from 0 to 100. 
-            )
-            vehicle.send_mavlink(msg)
-            vehicle.flush()
-
-            # Save static variables
-            send_vision_position_delta_message.H_aeroRef_PrevAeroBody = H_aeroRef_aeroBody
-            send_vision_position_delta_message.prev_time_us = current_time_us
-
-
 # https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
-# D435 Depth Field of View (FOV) (Horizontal × Vertical × Diagonal)	87°±3° x 58°±1° x 95°±3°
-# In the case of a forward facing camera with a Horizontal wide view, a message would look like:
-#   angle_offset = (MiddleAngle-half) = 0 - (87/2) = -43.5
-#   increment_f = (87/72) = 1.2
 def send_obstacle_distance_message():
-    global current_time_us, distances
+    global current_time_us, distances, MIN_DEPTH, MAX_DEPTH, increment_f, angle_offset
 
     msg = vehicle.message_factory.obstacle_distance_encode(
         current_time_us,    # us Timestamp (UNIX time or time since system boot)
         0,                  # sensor_type, defined here: https://mavlink.io/en/messages/common.html#MAV_DISTANCE_SENSOR
         distances,          # distances,    uint16_t[72],   cm
         0,                  # increment,    uint8_t,        deg
-        10,	                # min_distance, uint16_t,       cm
-        500,                # max_distance, uint16_t,       cm
-        1.2,	            # increment_f,  float,          deg
-        -43.5,              # angle_offset, float,          deg
+        MIN_DEPTH,	        # min_distance, uint16_t,       cm
+        MAX_DEPTH,          # max_distance, uint16_t,       cm
+        increment_f,	    # increment_f,  float,          deg
+        angle_offset,       # angle_offset, float,          deg
         0                   # MAV_FRAME       
     )
 
@@ -313,11 +198,6 @@ def send_distance_sensor_message():
 
     vehicle.send_mavlink(msg)
     vehicle.flush()
-
-def send_tracking_confidence_to_gcs():
-    global current_confidence_level
-    confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
-    send_msg_to_gcs(confidence_status_string)
 
 def send_msg_to_gcs(text_to_be_sent):
     # MAV_SEVERITY: 0=EMERGENCY 1=ALERT 2=CRITICAL 3=ERROR, 4=WARNING, 5=NOTICE, 6=INFO, 7=DEBUG, 8=ENUM_END
@@ -433,11 +313,6 @@ def realsense_connect():
 def user_input_monitor():
     global scale_factor
     while True:
-        # Specical case: updating scale
-        if scale_calib_enable == True:
-            scale_factor = float(input("INFO: Type in new scale as float number\n"))
-            print("INFO: New scale is ", scale_factor)
-
         if enable_auto_set_ekf_home:
             send_msg_to_gcs('Set EKF home with default GPS location')
             set_default_global_origin()
@@ -470,15 +345,8 @@ send_msg_to_gcs('Connecting to camera...')
 realsense_connect()
 send_msg_to_gcs('Camera connected.')
 
-if compass_enabled == 1:
-    # Listen to the attitude data in aeronautical frame
-    vehicle.add_message_listener('ATTITUDE', att_msg_callback)
-
 # Send MAVlink messages in the background at pre-determined frequencies
 sched = BackgroundScheduler()
-
-if enable_msg_vision_position_estimate:
-    sched.add_job(send_vision_position_estimate_message, 'interval', seconds = 1/vision_position_estimate_msg_hz)
 
 if enable_msg_obstacle_distance:
     sched.add_job(send_obstacle_distance_message, 'interval', seconds = 1/obstacle_distance_msg_hz)
@@ -490,10 +358,14 @@ user_keyboard_input_thread.start()
 
 sched.start()
 
-if compass_enabled == 1:
-    time.sleep(1) # Wait a short while for yaw to be correctly initiated
-
-send_msg_to_gcs('Sending vision messages to FCU')
+if enable_msg_obstacle_distance:
+    send_msg_to_gcs('Sending obstacle distance messages to FCU')
+else:
+    send_msg_to_gcs('Nothing to do. Check params to enable something')
+    pipe.stop()
+    vehicle.close()
+    print("INFO: Realsense pipe and vehicle object closed.")
+    sys.exit()
 
 print("INFO: Press Enter to set EKF home at default location")
 
@@ -510,41 +382,40 @@ try:
         # Store the timestamp for MAVLink messages
         current_time_us = int(round(time.time() * 1000000))
 
-        # Print a simple text-based representation of the image, by breaking it into WIDTH_RATIO x HEIGHT_RATIO pixel regions and approximating the coverage of pixels within MAX_DEPTH
-        img_txt = ""
-        coverage = [0] * ROW_LENGTH
-
-        for y in range(HEIGHT):
-            for x in range(WIDTH):
-                dist = depth.get_distance(x, y)
-                if 0 < dist and dist < MAX_DEPTH:
-                    coverage[x//WIDTH_RATIO] += 1
-            
-            if y % HEIGHT_RATIO is (HEIGHT_RATIO - 1):
-                line = ""
-                for c in coverage:
-                    pixel_index = c // int(HEIGHT_RATIO * WIDTH_RATIO / (len(pixels) - 1))  # Magic number: c // 25
-                    line += pixels[pixel_index]
-                coverage = [0] * ROW_LENGTH
-                img_txt += line + "\n"
-        
-        print(img_txt)
-
         # Create obstacle distance data from depth image
-        step = WIDTH // 72
-        for i in range(72):
+        step = WIDTH // DISTANCES_ARRAY_LEN
+        for i in range(DISTANCES_ARRAY_LEN):
             # Query the frame for distance Note: this can be optimized
             distances[i] = depth.get_distance(int(i * step), int(HEIGHT / 2)) * 100
         
         if debug_enable:
+            # Print a simple text-based representation of the image, by breaking it into WIDTH_RATIO x HEIGHT_RATIO pixel regions and approximating the coverage of pixels within MAX_DEPTH
+            img_txt = "\n"
+            coverage = [0] * ROW_LENGTH
+            for y in range(HEIGHT):
+                for x in range(WIDTH):
+                    dist = depth.get_distance(x, y)
+                    if 0 < dist and dist < MAX_DEPTH:
+                        coverage[x // WIDTH_RATIO] += 1
+                
+                if y % HEIGHT_RATIO is (HEIGHT_RATIO - 1):
+                    line = ""
+                    for c in coverage:
+                        pixel_index = c // int(HEIGHT_RATIO * WIDTH_RATIO / (len(pixels) - 1))  # Magic number: c // 25
+                        line += pixels[pixel_index]
+                    coverage = [0] * ROW_LENGTH
+                    img_txt += line + "\n"
+            print(img_txt)
+
+            # Print all the distances in a line
             print(*distances)
+
+except KeyboardInterrupt:
+    send_msg_to_gcs('Closing the script...')  
 
 except Exception as e:
     print(e)
     pass
-
-except KeyboardInterrupt:
-    send_msg_to_gcs('Closing the script...')  
 
 except:
     send_msg_to_gcs('ERROR: Depth camera disconnected')  

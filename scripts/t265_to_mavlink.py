@@ -372,7 +372,7 @@ def realsense_connect():
 def user_input_monitor():
     global scale_factor
     while True:
-        # Specical case: updating scale
+        # Special case: updating scale
         if scale_calib_enable == True:
             scale_factor = float(input("INFO: Type in new scale as float number\n"))
             print("INFO: New scale is ", scale_factor)
