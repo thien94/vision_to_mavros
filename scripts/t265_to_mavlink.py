@@ -298,12 +298,20 @@ def send_vision_speed_estimate_message():
     global is_vehicle_connected, current_time_us, V_aeroRef_aeroBody, reset_counter
     with lock:
         if is_vehicle_connected == True and V_aeroRef_aeroBody is not None:
+
+            # Attemp #01: following this formula https://github.com/IntelRealSense/realsense-ros/blob/development/realsense2_camera/src/base_realsense_node.cpp#L1406-L1411
+            cov_pose    = linear_accel_cov * pow(10, 3 - int(data.tracker_confidence))
+            covariance  = np.array([cov_pose,   0,          0,
+                                    0,          cov_pose,   0,
+                                    0,          0,          cov_pose])
+            
+            # Setup the message to be sent
             msg = vehicle.message_factory.vision_speed_estimate_encode(
                 current_time_us,            # us Timestamp (UNIX time or time since system boot)
                 V_aeroRef_aeroBody[0][3],   # Global X speed
                 V_aeroRef_aeroBody[1][3],   # Global Y speed
                 V_aeroRef_aeroBody[2][3],   # Global Z speed
-                np.zeros(9),                # covariance
+                covariance,                 # covariance
                 reset_counter               # Estimate reset counter. Increment every time pose estimate jumps.
             )
             vehicle.send_mavlink(msg)
