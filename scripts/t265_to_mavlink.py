@@ -106,7 +106,6 @@ angular_vel_cov  = 0.01
 # Data variables
 data = None
 prev_data = None
-last_pose_timestamp = 0
 H_aeroRef_aeroBody = None
 V_aeroRef_aeroBody = None
 heading_north_yaw = None
@@ -576,19 +575,14 @@ try:
                     delta_translation = [data.translation.x - prev_data.translation.x, data.translation.y - prev_data.translation.y, data.translation.z - prev_data.translation.z]
                     position_displacement = np.linalg.norm(delta_translation)
 
-                    delta_t = frames.get_timestamp() - last_pose_timestamp
-                    distance_displacement = np.linalg.norm([data.velocity.x, data.velocity.y, data.velocity.z]) * delta_t
-
-                    # Pose jump is indicated when position changes more than what is possible by calculation from velocity
-                    # The behavior is not well documented yet (as of librealsense 2.34.0)
-                    if (position_displacement > distance_displacement * 1.1):
+                    # Pose jump is indicated when position changes abruptly. The behavior is not well documented yet (as of librealsense 2.34.0)
+                    jump_threshold = 0.1 # in meters, from trials and errors, should be relative to how frequent is the position data obtained (200Hz for the T265)
+                    if (position_displacement > jump_threshold):
                         send_msg_to_gcs('Pose jump detected')
+                        print("Position jumped by: ", position_displacement)
                         reset_counter += 1
                     
-                    # print("Delta translation ", position_displacement)
-                    
                 prev_data = data
-                last_pose_timestamp = frames.get_timestamp()
 
                 # Take offsets from body's center of gravity (or IMU) to camera's origin into account
                 if body_offset_enabled == 1:
