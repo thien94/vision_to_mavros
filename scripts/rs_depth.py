@@ -25,6 +25,7 @@ MAX_DEPTH    = 1                # Approximate the coverage of pixels within this
 ROW_LENGTH   = int(WIDTH / WIDTH_RATIO)
 pixels       = " .:nhBXWW"      # The text-based representation of depth
 
+
 ######################################################
 ##      Functions                                   ##
 ######################################################
@@ -37,7 +38,7 @@ def calculate_depth_txt_img(depth_mat):
         # Create a depth histogram for each row
         for x in range(WIDTH):
             # dist = depth_frame.get_distance(x, y) is simplier to implement, but calling `get_distance` excessively can result in bad performance (much slower), so it could be beneficial to read the `DEPTH_UNITS` option directly from the `depth_sensor` and use it to convert raw depth pixels to meters, which is what we do here
-            dist = depth_mat[y][x]
+            dist = depth_mat[y,x]
             if 0 < dist and dist < MAX_DEPTH_TRUE_SCALE:
                 coverage[x // WIDTH_RATIO] += 1
 

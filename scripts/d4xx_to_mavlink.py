@@ -28,9 +28,10 @@ import argparse
 import threading
 from time import sleep
 from apscheduler.schedulers.background import BackgroundScheduler
-
 from dronekit import connect, VehicleMode
 from pymavlink import mavutil
+
+from numba import njit              # pip install numba, or use anaconda to install
 
 ######################################################
 ##        Depth parameters - reconfigurable         ##
@@ -42,9 +43,9 @@ HEIGHT       = 480              # Defines the number of lines for each frame or 
 FPS          = 30               # Defines the rate of frames per second
 HEIGHT_RATIO = 20               # Defines the height ratio between the original frame to the new frame
 WIDTH_RATIO  = 10               # Defines the width ratio between the original frame to the new frame
-MAX_DEPTH    = 1                # Approximate the coverage of pixels within this range (meter)
 ROW_LENGTH   = int(WIDTH / WIDTH_RATIO)
 pixels       = " .:nhBXWW"      # The text-based representation of depth
+MAX_TXT_IMG_DEPTH = 1           # Approximate the coverage of pixels within this range (meter)
 
 # Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
 # See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
@@ -104,6 +105,7 @@ is_vehicle_connected = False
 
 # Camera-related variables
 pipe = None
+depth_scale = 0
 
 # Data variables
 data = None
@@ -204,7 +206,7 @@ def send_msg_to_gcs(text_to_be_sent):
     # Defined here: https://mavlink.io/en/messages/common.html#MAV_SEVERITY
     # MAV_SEVERITY = 3 will let the message be displayed on Mission Planner HUD, but 6 is ok for QGroundControl
     if is_vehicle_connected == True:
-        text_msg = 'T265: ' + text_to_be_sent
+        text_msg = 'D4xx: ' + text_to_be_sent
         status_msg = vehicle.message_factory.statustext_encode(
             6,                      # MAV_SEVERITY
             text_msg.encode()	    # max size is char[50]       
@@ -296,7 +298,7 @@ def vehicle_connect():
         return True
 
 def realsense_connect():
-    global pipe
+    global pipe, depth_scale
     # Declare RealSense pipe, encapsulating the actual device and sensors
     pipe = rs.pipeline()
 
@@ -307,7 +309,12 @@ def realsense_connect():
     cfg.enable_stream(STREAM_TYPE, WIDTH, HEIGHT, FORMAT, FPS)
 
     # Start streaming with requested config
-    pipe.start(cfg)
+    profile = pipe.start(cfg)
+
+    # Getting the depth sensor's depth scale (see rs-align example for explanation)
+    depth_sensor = profile.get_device().first_depth_sensor()
+    depth_scale = depth_sensor.get_depth_scale()
+    print("INFO: Depth scale is: ", depth_scale)
 
 # Monitor user input from the terminal and perform action accordingly
 def user_input_monitor():
@@ -331,6 +338,46 @@ def user_input_monitor():
                 print("Got keyboard input", c)
         except IOError: pass
 
+
+# Calculate a simple text-based representation of the image, by breaking it into WIDTH_RATIO x HEIGHT_RATIO pixel regions and approximating the coverage of pixels within MAX_DEPTH
+@njit
+def calculate_depth_txt_img(depth_mat):
+    img_txt = ""
+    coverage = [0] * ROW_LENGTH
+    for y in range(HEIGHT):
+        # Create a depth histogram for each row
+        for x in range(WIDTH):
+            dist = depth_mat[y,x] * depth_scale
+            if 0 < dist and dist < MAX_TXT_IMG_DEPTH:
+                coverage[x // WIDTH_RATIO] += 1
+
+        if y % HEIGHT_RATIO is (HEIGHT_RATIO - 1):
+            line = ""
+            for c in coverage:
+                pixel_index = c // int(HEIGHT_RATIO * WIDTH_RATIO / (len(pixels) - 1))  # Magic number: c // 25
+                line += pixels[pixel_index]
+            coverage = [0] * ROW_LENGTH
+            img_txt += line + "\n"
+    return img_txt
+
+@njit
+def calculate_distances_from_depth(depth_mat, distances, depth_range):
+    # global distances
+    step = WIDTH // DISTANCES_ARRAY_LEN
+    radius = step / 2
+    for i in range(DISTANCES_ARRAY_LEN):
+        x_pixel_center = i * step + radius
+        x_pixel_range = [int(x_pixel_center - radius), int(x_pixel_center + radius)]
+
+        y_pixel_center = HEIGHT / 2
+        y_pixel_range = [int(y_pixel_center - radius), int(y_pixel_center + radius)]
+
+        dist_m = np.mean(depth_mat[y_pixel_range[0]:y_pixel_range[1], x_pixel_range[0]:x_pixel_range[1]]) * depth_scale
+
+        if dist_m < depth_range[0] or dist_m > depth_range[1]:
+            dist_m = 0
+
+        distances[i] = dist_m * 100
 
 #######################################
 # Main code starts here
@@ -369,46 +416,41 @@ else:
 
 print("INFO: Press Enter to set EKF home at default location")
 
+last_time = time.time()
+
 try:
     while True:
         # This call waits until a new coherent set of frames is available on a device
         # Calls to get_frame_data(...) and get_frame_timestamp(...) on a device will return stable values until wait_for_frames(...) is called
         frames = pipe.wait_for_frames()
-        depth = frames.get_depth_frame()
+        depth_frame = frames.get_depth_frame()
 
-        if not depth:
+        if not depth_frame:
             continue
 
         # Store the timestamp for MAVLink messages
         current_time_us = int(round(time.time() * 1000000))
 
+        depth_data = depth_frame.as_frame().get_data()
+        depth_array = np.asanyarray(depth_data)
+
         # Create obstacle distance data from depth image
-        step = WIDTH // DISTANCES_ARRAY_LEN
-        for i in range(DISTANCES_ARRAY_LEN):
-            # Query the frame for distance Note: this can be optimized
-            distances[i] = depth.get_distance(int(i * step), int(HEIGHT / 2)) * 100
-        
+        calculate_distances_from_depth(depth_array, distances, DEPTH_RANGE)
+
         if debug_enable:
-            # Print a simple text-based representation of the image, by breaking it into WIDTH_RATIO x HEIGHT_RATIO pixel regions and approximating the coverage of pixels within MAX_DEPTH
-            img_txt = "\n"
-            coverage = [0] * ROW_LENGTH
-            for y in range(HEIGHT):
-                for x in range(WIDTH):
-                    dist = depth.get_distance(x, y)
-                    if 0 < dist and dist < MAX_DEPTH:
-                        coverage[x // WIDTH_RATIO] += 1
-                
-                if y % HEIGHT_RATIO is (HEIGHT_RATIO - 1):
-                    line = ""
-                    for c in coverage:
-                        pixel_index = c // int(HEIGHT_RATIO * WIDTH_RATIO / (len(pixels) - 1))  # Magic number: c // 25
-                        line += pixels[pixel_index]
-                    coverage = [0] * ROW_LENGTH
-                    img_txt += line + "\n"
+            img_txt = calculate_depth_txt_img(depth_array)
             print(img_txt)
+            
+            # Print some debugging messages
+            processing_time = time.time() - last_time
+            print("Text-based depth img within %.3f meter" % MAX_TXT_IMG_DEPTH)
+            print("Processing time per image: %.3f sec" % processing_time)
+            if processing_time > 0:
+                print("Processing freq per image: %.3f Hz" % (1/processing_time))
+            last_time = time.time()
 
             # Print all the distances in a line
-            print(*distances)
+            # print(*distances)
 
 except KeyboardInterrupt:
     send_msg_to_gcs('Closing the script...')  
