@@ -4,10 +4,13 @@
 ######################################################
 
 # First import the library
-import pyrealsense2 as rs
 import sys
+import pyrealsense2 as rs           # Intel RealSense cross-platform open-source API
 import time
-import numpy as np
+import numpy as np                  # fundamental package for scientific computing
+import matplotlib.pyplot as plt     # 2D plotting library producing publication quality figures
+from numba import njit              # pip install numba, or use anaconda to install
+
 
 ######################################################
 ##      These parameters are reconfigurable         ##
@@ -24,6 +27,32 @@ ROW_LENGTH   = int(WIDTH / WIDTH_RATIO)
 pixels       = " .:nhBXWW"      # The text-based representation of depth
 
 ######################################################
+##      Functions                                   ##
+######################################################
+
+@njit
+def calculate_depth_txt_img(depth_mat):
+    img_txt = ""
+    coverage = [0] * ROW_LENGTH
+    for y in range(HEIGHT):
+        # Create a depth histogram for each row
+        for x in range(WIDTH):
+            # dist = depth_frame.get_distance(x, y) is simplier to implement, but calling `get_distance` excessively can result in bad performance (much slower), so it could be beneficial to read the `DEPTH_UNITS` option directly from the `depth_sensor` and use it to convert raw depth pixels to meters, which is what we do here
+            dist = depth_mat[y][x]
+            if 0 < dist and dist < MAX_DEPTH_TRUE_SCALE:
+                coverage[x // WIDTH_RATIO] += 1
+
+        if y % HEIGHT_RATIO is (HEIGHT_RATIO - 1):
+            line = ""
+            for c in coverage:
+                pixel_index = c // int(HEIGHT_RATIO * WIDTH_RATIO / (len(pixels) - 1))  # Magic number: c // 25
+                line += pixels[pixel_index]
+            coverage = [0] * ROW_LENGTH
+            img_txt += line + "\n"
+
+    return img_txt
+
+######################################################
 ##      Main program starts here                    ##
 ######################################################
 try:
@@ -33,13 +62,16 @@ try:
     config.enable_stream(STREAM_TYPE, WIDTH, HEIGHT, FORMAT, FPS)
     profile = pipeline.start(config)
 
+    # Visualizing the depth image
+    colorizer = rs.colorizer()
+
     # Getting the depth sensor's depth scale (see rs-align example for explanation)
     depth_sensor = profile.get_device().first_depth_sensor()
     depth_scale = depth_sensor.get_depth_scale()
     print("Depth scale is: ", depth_scale)
 
     # Actual depth value in meter
-    max_distance_filtered = MAX_DEPTH / depth_scale
+    MAX_DEPTH_TRUE_SCALE = MAX_DEPTH / depth_scale
 
     last_time = time.time()
 
@@ -47,40 +79,24 @@ try:
         # This call waits until a new coherent set of frames is available on a device
         # Calls to get_frame_data(...) and get_frame_timestamp(...) on a device will return stable values until wait_for_frames(...) is called
         frames = pipeline.wait_for_frames()
-        depth_image = frames.get_depth_frame()
+        depth_frame = frames.get_depth_frame()
 
-        if not depth_image:
+        if not depth_frame:
             continue
         
-        depth_data = depth_image.as_frame().get_data()
-        # List seems to work faster than array
+        depth_data = depth_frame.as_frame().get_data()
         depth_array = np.asanyarray(depth_data)
-        depth_mat = np.asanyarray(depth_data).tolist()
-
-        # Print a simple text-based representation of the image, by breaking it into WIDTH_RATIO x HEIGHT_RATIO pixel regions and approximating the coverage of pixels within MAX_DEPTH
-        img_txt = ""
-        coverage = [0] * ROW_LENGTH
-            
-        for y in range(HEIGHT):
-            for x in range(WIDTH):
-                # dist = depth_image.get_distance(x, y)
-                dist = depth_mat[y][x]
-                if 0 < dist and dist < max_distance_filtered:
-                    coverage[x//WIDTH_RATIO] += 1
-            if y % HEIGHT_RATIO is (HEIGHT_RATIO - 1):
-                line = ""
-                for c in coverage:
-                    pixel_index = c // int(HEIGHT_RATIO * WIDTH_RATIO / (len(pixels) - 1))  # Magic number: c // 25
-                    line += pixels[pixel_index]
-                coverage = [0] * ROW_LENGTH
-                img_txt += line + "\n"
         
+        # Print a simple text-based representation of the image, by breaking it into WIDTH_RATIO x HEIGHT_RATIO pixel regions and approximating the coverage of pixels within MAX_DEPTH_TRUE_SCALE
+        img_txt = calculate_depth_txt_img(depth_array)
         print(img_txt)
+        
+        # Print some debugging messages
         processing_time = time.time() - last_time
-        print("Processed time per image: %.3f sec" % processing_time)
+        print("Text-based depth img within %.3f meter" % MAX_DEPTH)
+        print("Processing time per image: %.3f sec" % processing_time)
         if processing_time > 0:
-            print("Processing freq: %.3f Hz" % (1/processing_time))
-
+            print("Processing freq per image: %.3f Hz" % (1/processing_time))
         last_time = time.time()
 
 except Exception as e:
