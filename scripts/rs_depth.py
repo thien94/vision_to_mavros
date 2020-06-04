@@ -8,7 +8,6 @@ import sys
 import pyrealsense2 as rs           # Intel RealSense cross-platform open-source API
 import time
 import numpy as np                  # fundamental package for scientific computing
-import matplotlib.pyplot as plt     # 2D plotting library producing publication quality figures
 from numba import njit              # pip install numba, or use anaconda to install
 
 
@@ -61,9 +60,6 @@ try:
     config = rs.config()
     config.enable_stream(STREAM_TYPE, WIDTH, HEIGHT, FORMAT, FPS)
     profile = pipeline.start(config)
-
-    # Visualizing the depth image
-    colorizer = rs.colorizer()
 
     # Getting the depth sensor's depth scale (see rs-align example for explanation)
     depth_sensor = profile.get_device().first_depth_sensor()
