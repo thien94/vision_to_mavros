@@ -43,24 +43,22 @@ HEIGHT       = 480              # Defines the number of lines for each frame or 
 FPS          = 30               # Defines the rate of frames per second
 HEIGHT_RATIO = 20               # Defines the height ratio between the original frame to the new frame
 WIDTH_RATIO  = 10               # Defines the width ratio between the original frame to the new frame
+MAX_TXT_IMG_DEPTH = 1           # Approximate the coverage of pixels within this range (meter)
 ROW_LENGTH   = int(WIDTH / WIDTH_RATIO)
 pixels       = " .:nhBXWW"      # The text-based representation of depth
-MAX_TXT_IMG_DEPTH = 1           # Approximate the coverage of pixels within this range (meter)
-
-# Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
-# See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
-DISTANCES_ARRAY_LEN = 72
-distances = np.zeros((DISTANCES_ARRAY_LEN,), dtype=np.uint16)
 
 # Sensor-specific parameter, for D435: https://www.intelrealsense.com/depth-camera-d435/
 HFOV        = 87
 DEPTH_RANGE = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
-MIN_DEPTH   = int(DEPTH_RANGE[0] * 100)  # In cm
-MAX_DEPTH   = int(DEPTH_RANGE[1] * 100)  # In cm, being a little conservative
+MIN_DEPTH_CM = int(DEPTH_RANGE[0] * 100)  # In cm
+MAX_DEPTH_CM = int(DEPTH_RANGE[1] * 100)  # In cm, being a little conservative
 
-# In the case of a forward facing camera with a horizontal wide view:
-angle_offset = -(HFOV / 2)
+# Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
+# See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
+DISTANCES_ARRAY_LEN = 72
+angle_offset = -(HFOV / 2)  # In the case of a forward facing camera with a horizontal wide view:
 increment_f  = HFOV / DISTANCES_ARRAY_LEN
+distances = np.ones((DISTANCES_ARRAY_LEN,), dtype=np.uint16) * (MAX_DEPTH_CM + 1)
 
 ######################################################
 ##                    Parameters                    ##
@@ -162,18 +160,17 @@ else:
 
 # https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
 def send_obstacle_distance_message():
-    global current_time_us, distances, MIN_DEPTH, MAX_DEPTH, increment_f, angle_offset
-
+    global current_time_us, distances, MIN_DEPTH_CM, MAX_DEPTH_CM, increment_f, angle_offset
     msg = vehicle.message_factory.obstacle_distance_encode(
         current_time_us,    # us Timestamp (UNIX time or time since system boot)
         0,                  # sensor_type, defined here: https://mavlink.io/en/messages/common.html#MAV_DISTANCE_SENSOR
         distances,          # distances,    uint16_t[72],   cm
         0,                  # increment,    uint8_t,        deg
-        MIN_DEPTH,	        # min_distance, uint16_t,       cm
-        MAX_DEPTH,          # max_distance, uint16_t,       cm
+        MIN_DEPTH_CM,	    # min_distance, uint16_t,       cm
+        MAX_DEPTH_CM,       # max_distance, uint16_t,       cm
         increment_f,	    # increment_f,  float,          deg
         angle_offset,       # angle_offset, float,          deg
-        0                   # MAV_FRAME       
+        12                  # MAV_FRAME, vehicle-front aligned: https://mavlink.io/en/messages/common.html#MAV_FRAME_BODY_FRD    
     )
 
     vehicle.send_mavlink(msg)
@@ -338,8 +335,7 @@ def user_input_monitor():
                 print("Got keyboard input", c)
         except IOError: pass
 
-
-# Calculate a simple text-based representation of the image, by breaking it into WIDTH_RATIO x HEIGHT_RATIO pixel regions and approximating the coverage of pixels within MAX_DEPTH
+# Calculate a simple text-based representation of the image, by breaking it into WIDTH_RATIO x HEIGHT_RATIO pixel regions and approximating the coverage of pixels within MAX_TXT_IMG_DEPTH
 @njit
 def calculate_depth_txt_img(depth_mat):
     img_txt = ""
@@ -358,26 +354,34 @@ def calculate_depth_txt_img(depth_mat):
                 line += pixels[pixel_index]
             coverage = [0] * ROW_LENGTH
             img_txt += line + "\n"
+            
     return img_txt
 
 @njit
-def calculate_distances_from_depth(depth_mat, distances, depth_range):
-    # global distances
-    step = WIDTH // DISTANCES_ARRAY_LEN
+def calculate_distances_from_depth(depth_mat, distances, min_depth_m, max_depth_m):
+    step = WIDTH / DISTANCES_ARRAY_LEN
     radius = step / 2
     for i in range(DISTANCES_ARRAY_LEN):
-        x_pixel_center = i * step + radius
-        x_pixel_range = [int(x_pixel_center - radius), int(x_pixel_center + radius)]
 
-        y_pixel_center = HEIGHT / 2
-        y_pixel_range = [int(y_pixel_center - radius), int(y_pixel_center + radius)]
+        x_pixel_range_lower_bound = i * step - step / 2
+        if x_pixel_range_lower_bound < 0:
+            x_pixel_range_lower_bound = 0
+        
+        x_pixel_range_upper_bound = i * step + step / 2
+        if x_pixel_range_upper_bound > WIDTH - 1:
+            x_pixel_range_upper_bound = WIDTH - 1
+        
+        y_pixel_range_lower_bound = HEIGHT / 2 - step / 2
+        y_pixel_range_upper_bound = HEIGHT / 2 + step / 2
 
-        dist_m = np.mean(depth_mat[y_pixel_range[0]:y_pixel_range[1], x_pixel_range[0]:x_pixel_range[1]]) * depth_scale
+        # dist_m = np.mean(depth_mat[int(y_pixel_range_lower_bound):int(y_pixel_range_upper_bound), int(x_pixel_range_lower_bound):int(x_pixel_range_upper_bound)]) * depth_scale
+        dist_m = np.mean(depth_mat[int(HEIGHT/2), int(x_pixel_range_lower_bound):int(x_pixel_range_upper_bound)]) * depth_scale
+        # dist_m = depth_mat[int(HEIGHT/2), int(i * step)] * depth_scale
 
-        if dist_m < depth_range[0] or dist_m > depth_range[1]:
-            dist_m = 0
-
-        distances[i] = dist_m * 100
+        if dist_m < min_depth_m or dist_m > max_depth_m:
+            distances[i] = max_depth_m * 100 + 1
+        else:
+            distances[i] = dist_m * 100
 
 #######################################
 # Main code starts here
@@ -416,8 +420,23 @@ else:
 
 print("INFO: Press Enter to set EKF home at default location")
 
-last_time = time.time()
+# Filters to be applied
+decimation = rs.decimation_filter()
+decimation.set_option(rs.option.filter_magnitude, 4)
 
+spatial = rs.spatial_filter()
+# spatial.set_option(rs.option.filter_magnitude, 5)
+# spatial.set_option(rs.option.filter_smooth_alpha, 1)
+# spatial.set_option(rs.option.filter_smooth_delta, 50)
+# spatial.set_option(rs.option.holes_fill, 3)
+
+hole_filling = rs.hole_filling_filter()
+
+depth_to_disparity = rs.disparity_transform(True)
+disparity_to_depth = rs.disparity_transform(False)
+
+# Begin of the main loop
+last_time = time.time()
 try:
     while True:
         # This call waits until a new coherent set of frames is available on a device
@@ -431,14 +450,23 @@ try:
         # Store the timestamp for MAVLink messages
         current_time_us = int(round(time.time() * 1000000))
 
-        depth_data = depth_frame.as_frame().get_data()
-        depth_array = np.asanyarray(depth_data)
+        filtered_depth = depth_frame
+        # Apply the filter(s) according to this recommendation: https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md#using-filters-in-application-code
+        # filtered_depth = decimation.process(filtered_depth)
+        # filtered_depth = depth_to_disparity.process(filtered_depth)
+        # filtered_depth = spatial.process(filtered_depth)
+        # filtered_depth = disparity_to_depth.process(filtered_depth)
+        filtered_depth = hole_filling.process(filtered_depth)
+
+        # Extract depth in matrix form
+        depth_data = filtered_depth.as_frame().get_data()
+        depth_mat = np.asanyarray(depth_data)
 
         # Create obstacle distance data from depth image
-        calculate_distances_from_depth(depth_array, distances, DEPTH_RANGE)
+        calculate_distances_from_depth(depth_mat, distances, DEPTH_RANGE[0], DEPTH_RANGE[1])
 
         if debug_enable:
-            img_txt = calculate_depth_txt_img(depth_array)
+            img_txt = calculate_depth_txt_img(depth_mat)
             print(img_txt)
             
             # Print some debugging messages

@@ -10,6 +10,10 @@ import time
 import numpy as np                  # fundamental package for scientific computing
 from numba import njit              # pip install numba, or use anaconda to install
 
+sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages') # in order to import cv2 under python3
+sys.path.append('~/anaconda3/lib/python3.7/site-packages')
+import cv2
+
 
 ######################################################
 ##      These parameters are reconfigurable         ##
@@ -59,16 +63,30 @@ def calculate_depth_txt_img(depth_mat):
 try:
     # Create a context object. This object owns the handles to all connected realsense devices
     pipeline = rs.pipeline()
+
+    # Configure depth and color streams
     config = rs.config()
     config.enable_stream(STREAM_TYPE, WIDTH, HEIGHT, FORMAT, FPS)
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+
+    # Filters to be applied
+    decimation = rs.decimation_filter()
+    # decimation.set_option(rs.option.filter_magnitude, 4)
+
+    spatial = rs.spatial_filter()
+    # spatial.set_option(rs.option.filter_magnitude, 5)
+    # spatial.set_option(rs.option.filter_smooth_alpha, 1)
+    # spatial.set_option(rs.option.filter_smooth_delta, 50)
+    # spatial.set_option(rs.option.holes_fill, 3)
+
+    hole_filling = rs.hole_filling_filter()
+
+    depth_to_disparity = rs.disparity_transform(True)
+    disparity_to_depth = rs.disparity_transform(False)
+
+    # Start streaming
     profile = pipeline.start(config)
-
-    # Getting the depth sensor's depth scale (see rs-align example for explanation)
-    depth_sensor = profile.get_device().first_depth_sensor()
-    depth_scale = depth_sensor.get_depth_scale()
-    print("Depth scale is: ", depth_scale)
-
-    last_time = time.time()
+    colorizer = rs.colorizer()
 
     while True:
         # This call waits until a new coherent set of frames is available on a device
@@ -79,20 +97,24 @@ try:
         if not depth_frame:
             continue
         
-        depth_data = depth_frame.as_frame().get_data()
-        depth_array = np.asanyarray(depth_data)
-        
-        # Print a simple text-based representation of the image, by breaking it into WIDTH_RATIO x HEIGHT_RATIO pixel regions and approximating the coverage of pixels within MAX_DEPTH_TRUE_SCALE
-        img_txt = calculate_depth_txt_img(depth_array)
-        print(img_txt)
-        
-        # Print some debugging messages
-        processing_time = time.time() - last_time
-        print("Text-based depth img within %.3f meter" % MAX_DEPTH)
-        print("Processing time per image: %.3f sec" % processing_time)
-        if processing_time > 0:
-            print("Processing freq per image: %.3f Hz" % (1/processing_time))
-        last_time = time.time()
+        filtered_depth = depth_frame
+        # Apply the filter(s) according to this recommendation: https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md#using-filters-in-application-code
+        # filtered_depth = decimation.process(filtered_depth)
+        # filtered_depth = depth_to_disparity.process(filtered_depth)
+        # filtered_depth = spatial.process(filtered_depth)
+        # filtered_depth = disparity_to_depth.process(filtered_depth)
+        filtered_depth = hole_filling.process(filtered_depth)
+
+        # Convert image to numpy arrays
+        colorized_depth = np.asanyarray(colorizer.colorize(filtered_depth).get_data())
+
+        # Show images
+        cv2.namedWindow('Colorized depth', cv2.WINDOW_AUTOSIZE)
+        cv2.imshow('Colorized depth', colorized_depth)
+        cv2.waitKey(1)
+
+except KeyboardInterrupt:
+    print('Keyboard interrupt. Closing the script...')
 
 except Exception as e:
     print(e)
