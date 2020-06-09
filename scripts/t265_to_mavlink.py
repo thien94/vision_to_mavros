@@ -50,15 +50,15 @@ camera_orientation_default = 0
 
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
 enable_msg_vision_position_estimate = True
-vision_position_estimate_msg_hz_default = 15
+vision_position_estimate_msg_hz_default = 30
 
 # https://mavlink.io/en/messages/ardupilotmega.html#VISION_POSITION_DELTA
 enable_msg_vision_position_delta = False
-vision_position_delta_msg_hz_default = 15
+vision_position_delta_msg_hz_default = 30
 
 # https://mavlink.io/en/messages/common.html#VISION_SPEED_ESTIMATE
-enable_msg_vision_speed_estimate = True
-vision_speed_estimate_msg_hz_default = 15
+enable_msg_vision_speed_estimate = False
+vision_speed_estimate_msg_hz_default = 30
 
 # https://mavlink.io/en/messages/common.html#STATUSTEXT
 enable_update_tracking_confidence_to_gcs = True
