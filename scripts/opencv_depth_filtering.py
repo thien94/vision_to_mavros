@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 ######################################################
 ## Python implementation of rs-depth.c example      ##
 ## https://github.com/IntelRealSense/librealsense/tree/master/examples/C/depth
@@ -62,17 +64,17 @@ try:
     filters[4][2] = rs.spatial_filter()             # Spatial    - edge-preserving spatial smoothing
     filters[5][2] = rs.temporal_filter()            # Temporal   - reduces temporal noise
     filters[6][2] = rs.hole_filling_filter()        # Hole filling - rectify missing data in the resulting image
+    colorizer = rs.colorizer()
 
     # Configure the options of the filters
-    # decimation.set_option(rs.option.filter_magnitude, 4)
-    # spatial.set_option(rs.option.filter_magnitude, 5)
-    # spatial.set_option(rs.option.filter_smooth_alpha, 1)
-    # spatial.set_option(rs.option.filter_smooth_delta, 50)
-    # spatial.set_option(rs.option.holes_fill, 3)
+    # filters[0][2].set_option(rs.option.filter_magnitude, 4)
+    # filters[4][2].set_option(rs.option.filter_magnitude, 5)
+    # filters[4][2].set_option(rs.option.filter_smooth_alpha, 1)
+    # filters[4][2].set_option(rs.option.filter_smooth_delta, 50)
+    # filters[4][2].set_option(rs.option.holes_fill, 3)
 
     # Start streaming
     profile = pipeline.start(config)
-    colorizer = rs.colorizer()
 
     last_time = time.time()
     while True:
@@ -95,12 +97,12 @@ try:
         processing_speed = 1/(time.time() - last_time)
         print("\r>> Processing speed %.2f fps" %(processing_speed), end='')
         last_time = time.time()
-        
-        # Convert images to colorized numpy arrays
-        input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
-        output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
 
         if ENABLE_SHOW_IMAGE:
+            # Convert images to colorized numpy arrays
+            input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
+            output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
+
             # Configure the settings
             display_image = np.hstack((input_image, cv2.resize(output_image, (WIDTH, HEIGHT))))
             display_name  = 'Input/output depth'
