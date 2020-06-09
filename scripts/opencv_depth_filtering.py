@@ -26,19 +26,6 @@ HEIGHT      = 480              # Defines the number of lines for each frame or z
 FPS         = 30               # Defines the rate of frames per second
 ENABLE_SHOW_IMAGE = True
 
-# List of filters to be applied, in this order.
-# The order is according to this recommendation: https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md#using-filters-in-application-code
-# Enable/disable - Name - Object (to be used in the main code)
-filters = [
-    [True,  "Decimation Filter",    None],
-    [True,  "Threshold Filter",     None],
-    [True,  "Depth to Disparity",   None],
-    [True,  "Spatial Filter",       None],
-    [True,  "Temporal Filter",      None],
-    [False, "Hole Filling Filter",  None],
-    [True,  "Disparity to Depth",   None]
-]
-            
 ######################################################
 ##      Main program starts here                    ##
 ######################################################
@@ -50,22 +37,32 @@ try:
     config = rs.config()
     config.enable_stream(STREAM_TYPE[0], WIDTH, HEIGHT, FORMAT[0], FPS)
     config.enable_stream(STREAM_TYPE[1], WIDTH, HEIGHT, FORMAT[1], FPS)
+    colorizer = rs.colorizer()
+
+    # Depth Frame  (input)
+    # >> Decimation Filter (reduces depth frame density) 
+    # >> Threshold Filter (removes values outside recommended range)
+    # >> Depth2Disparity Transform** (transform the scene into disparity domain)
+    # >> Spatial Filter (edge-preserving spatial smoothing)
+    # >> Temporal Filter (reduces temporal noise)
+    # >> Hole Filling Filter (rectify missing data in the resulting image)
+    # >> Disparity2Depth Transform** (revert the results back to depth)
+    # >> Filtered Depth (output).
+    filters = [ # Enable/disable, Display Name, Type
+        [True, "Decimation Filter",     rs.decimation_filter()],
+        [True, "Threshold Filter",      rs.threshold_filter()],
+        [True, "Depth to Disparity",    rs.disparity_transform(True)],
+        [True, "Spatial Filter",        rs.spatial_filter()],
+        [True, "Temporal Filter",       rs.temporal_filter()],
+        [False, "Hole Filling Filter",  rs.hole_filling_filter()],
+        [True,  "Disparity to Depth",   rs.disparity_transform(False)]
+    ]
 
     for i in range(len(filters)):
         if filters[i][0] is True:
             print("Applying: ", filters[i][1])
         else:
             print("NOT applying: ", filters[i][1])
-
-    # Filters to be applied, the recommended scheme used in librealsense tools and demos is elaborated below: Depth Frame >> Decimation Filter >> Depth2Disparity Transform** -> Spatial Filter >> Temporal Filter >> Disparity2Depth Transform** >> Hole Filling Filter >> Filtered Depth.
-    filters[0][2] = rs.decimation_filter()          # Decimation - reduces depth frame density
-    filters[1][2] = rs.threshold_filter()           # Threshold  - removes values outside recommended range
-    filters[2][2] = rs.disparity_transform(True)    # depth_to_disparity - transform the scene into disparity domain
-    filters[3][2] = rs.spatial_filter()             # Spatial    - edge-preserving spatial smoothing
-    filters[4][2] = rs.temporal_filter()            # Temporal   - reduces temporal noise
-    filters[5][2] = rs.hole_filling_filter()        # Hole filling - rectify missing data in the resulting image
-    filters[6][2] = rs.disparity_transform(False)   # disparity_to_depth - revert the results back to depth
-    colorizer = rs.colorizer()
 
     # Configure the options of the filters
     # filters[0][2].set_option(rs.option.filter_magnitude, 4)
@@ -91,7 +88,6 @@ try:
         filtered_frame = depth_frame
         for i in range(len(filters)):
             if filters[i][0] is True:
-                # Apply the filter
                 filtered_frame = filters[i][2].process(filtered_frame)
         
         # Show the processing speed
