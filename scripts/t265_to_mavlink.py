@@ -41,15 +41,26 @@ connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 connection_timeout_sec_default = 5
 
+# Transformation to convert different camera orientations to NED convention. Replace camera_orientation_default for your configuration.
+#   0: Forward, USB port to the right
+#   1: Downfacing, USB port to the right 
+#   2: Forward, 45 degree tilted down
+# Important note for downfacing camera: you need to tilt the vehicle's nose up a little - not flat - before you run the script, otherwise the initial yaw will be randomized, read here for more details: https://github.com/IntelRealSense/librealsense/issues/4080. Tilt the vehicle to any other sides and the yaw might not be as stable.
 camera_orientation_default = 0
 
-# Enable/disable each message/function individually
+# https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
 enable_msg_vision_position_estimate = True
-vision_position_estimate_msg_hz_default = 15
+vision_position_estimate_msg_hz_default = 30
 
+# https://mavlink.io/en/messages/ardupilotmega.html#VISION_POSITION_DELTA
 enable_msg_vision_position_delta = False
-vision_position_delta_msg_hz_default = 15
+vision_position_delta_msg_hz_default = 30
 
+# https://mavlink.io/en/messages/common.html#VISION_SPEED_ESTIMATE
+enable_msg_vision_speed_estimate = False
+vision_speed_estimate_msg_hz_default = 30
+
+# https://mavlink.io/en/messages/common.html#STATUSTEXT
 enable_update_tracking_confidence_to_gcs = True
 update_tracking_confidence_to_gcs_hz_default = 1
 
@@ -73,7 +84,7 @@ scale_factor = 1.0
 compass_enabled = 0
 
 # pose data confidence: 0x0 - Failed / 0x1 - Low / 0x2 - Medium / 0x3 - High 
-pose_data_confidence_level = ('Failed', 'Low', 'Medium', 'High')
+pose_data_confidence_level = ('FAILED', 'Low', 'Medium', 'High')
 
 # lock for thread synchronization
 lock = threading.Lock()
@@ -88,13 +99,23 @@ is_vehicle_connected = False
 
 # Camera-related variables
 pipe = None
+pose_sensor = None
+linear_accel_cov = 0.01
+angular_vel_cov  = 0.01
 
 # Data variables
 data = None
+prev_data = None
 H_aeroRef_aeroBody = None
+V_aeroRef_aeroBody = None
 heading_north_yaw = None
 current_confidence_level = None
 current_time_us = 0
+
+# Increment everytime pose_jumping or relocalization happens
+# See here: https://github.com/IntelRealSense/librealsense/blob/master/doc/t265.md#are-there-any-t265-specific-options
+# For AP, a non-zero "reset_counter" would mean that we could be sure that the user's setup was using mavlink2
+reset_counter = 1
 
 #######################################
 # Parsing user' inputs
@@ -109,6 +130,8 @@ parser.add_argument('--vision_position_estimate_msg_hz', type=float,
                     help="Update frequency for VISION_POSITION_ESTIMATE message. If not specified, a default value will be used.")
 parser.add_argument('--vision_position_delta_msg_hz', type=float,
                     help="Update frequency for VISION_POSITION_DELTA message. If not specified, a default value will be used.")
+parser.add_argument('--vision_speed_estimate_msg_hz', type=float,
+                    help="Update frequency for VISION_SPEED_DELTA message. If not specified, a default value will be used.")
 parser.add_argument('--scale_calib_enable', default=False, action='store_true',
                     help="Scale calibration. Only run while NOT in flight")
 parser.add_argument('--camera_orientation', type=int,
@@ -122,6 +145,7 @@ connection_string = args.connect
 connection_baudrate = args.baudrate
 vision_position_estimate_msg_hz = args.vision_position_estimate_msg_hz
 vision_position_delta_msg_hz = args.vision_position_delta_msg_hz
+vision_speed_estimate_msg_hz = args.vision_speed_estimate_msg_hz
 scale_calib_enable = args.scale_calib_enable
 camera_orientation = args.camera_orientation
 debug_enable = args.debug_enable
@@ -151,6 +175,12 @@ if not vision_position_delta_msg_hz:
 else:
     print("INFO: Using vision_position_delta_msg_hz", vision_position_delta_msg_hz)
 
+if not vision_speed_estimate_msg_hz:
+    vision_speed_estimate_msg_hz = vision_speed_estimate_msg_hz_default
+    print("INFO: Using default vision_speed_estimate_msg_hz", vision_speed_estimate_msg_hz)
+else:
+    print("INFO: Using vision_speed_estimate_msg_hz", vision_speed_estimate_msg_hz)
+
 if body_offset_enabled == 1:
     print("INFO: Using camera position offset: Enabled, x y z is", body_offset_x, body_offset_y, body_offset_z)
 else:
@@ -174,12 +204,6 @@ if not camera_orientation:
     print("INFO: Using default camera orientation", camera_orientation)
 else:
     print("INFO: Using camera orientation", camera_orientation)
-
-# Transformation to convert different camera orientations to NED convention. Replace camera_orientation_default for your configuration.
-#   0: Forward, USB port to the right
-#   1: Downfacing, USB port to the right 
-#   2: Forward, 45 degree tilted down
-# Important note for downfacing camera: you need to tilt the vehicle's nose up a little - not flat - before you run the script, otherwise the initial yaw will be randomized, read here for more details: https://github.com/IntelRealSense/librealsense/issues/4080. Tilt the vehicle to any other sides and the yaw might not be as stable.
 
 if camera_orientation == 0:     # Forward, USB port to the right
     H_aeroRef_T265Ref   = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
@@ -208,20 +232,35 @@ else:
 
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
 def send_vision_position_estimate_message():
-    global is_vehicle_connected, current_time_us, H_aeroRef_aeroBody
+    global is_vehicle_connected, current_time_us, H_aeroRef_aeroBody, reset_counter
     with lock:
         if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
+            # Setup angle data
             rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
-            msg = vehicle.message_factory.vision_position_estimate_encode(
-                current_time_us,                    # us Timestamp (UNIX time or time since system boot)
-                H_aeroRef_aeroBody[0][3],	        # Global X position
-                H_aeroRef_aeroBody[1][3],           # Global Y position
-                H_aeroRef_aeroBody[2][3],	        # Global Z position
-                rpy_rad[0],	                        # Roll angle
-                rpy_rad[1],	                        # Pitch angle
-                rpy_rad[2]	                        # Yaw angle
-            )
 
+            # Setup covariance data, which is the upper right triangle of the covariance matrix, see here: https://files.gitter.im/ArduPilot/VisionProjects/1DpU/image.png
+            # Attemp #01: following this formula https://github.com/IntelRealSense/realsense-ros/blob/development/realsense2_camera/src/base_realsense_node.cpp#L1406-L1411
+            cov_pose    = linear_accel_cov * pow(10, 3 - int(data.tracker_confidence))
+            cov_twist   = angular_vel_cov  * pow(10, 1 - int(data.tracker_confidence))
+            covariance  = np.array([cov_pose, 0, 0, 0, 0, 0,
+                                       cov_pose, 0, 0, 0, 0,
+                                          cov_pose, 0, 0, 0,
+                                            cov_twist, 0, 0,
+                                               cov_twist, 0,
+                                                  cov_twist])
+
+            # Setup the message to be sent
+            msg = vehicle.message_factory.vision_position_estimate_encode(
+                current_time_us,            # us Timestamp (UNIX time or time since system boot)
+                H_aeroRef_aeroBody[0][3],   # Global X position
+                H_aeroRef_aeroBody[1][3],   # Global Y position
+                H_aeroRef_aeroBody[2][3],   # Global Z position
+                rpy_rad[0],	                # Roll angle
+                rpy_rad[1],	                # Pitch angle
+                rpy_rad[2],	                # Yaw angle
+                covariance,                 # Row-major representation of pose 6x6 cross-covariance matrix
+                reset_counter               # Estimate reset counter. Increment every time pose estimate jumps.
+            )
             vehicle.send_mavlink(msg)
             vehicle.flush()
 
@@ -244,7 +283,7 @@ def send_vision_position_delta_message():
                 delta_time_us,	    # us: Time since last reported camera frame
                 delta_angle_rad,    # float[3] in radian: Defines a rotation vector in body frame that rotates the vehicle from the previous to the current orientation
                 delta_position_m,   # float[3] in m: Change in position from previous to current frame rotated into body frame (0=forward, 1=right, 2=down)
-                current_confidence_level # Normalised confidence value from 0 to 100. 
+                current_confidence_level # Normalized confidence value from 0 to 100. 
             )
             vehicle.send_mavlink(msg)
             vehicle.flush()
@@ -253,11 +292,38 @@ def send_vision_position_delta_message():
             send_vision_position_delta_message.H_aeroRef_PrevAeroBody = H_aeroRef_aeroBody
             send_vision_position_delta_message.prev_time_us = current_time_us
 
-def send_tracking_confidence_to_gcs():
-    global current_confidence_level
-    confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
-    send_msg_to_gcs(confidence_status_string)
+# https://mavlink.io/en/messages/common.html#VISION_SPEED_ESTIMATE
+def send_vision_speed_estimate_message():
+    global is_vehicle_connected, current_time_us, V_aeroRef_aeroBody, reset_counter
+    with lock:
+        if is_vehicle_connected == True and V_aeroRef_aeroBody is not None:
 
+            # Attemp #01: following this formula https://github.com/IntelRealSense/realsense-ros/blob/development/realsense2_camera/src/base_realsense_node.cpp#L1406-L1411
+            cov_pose    = linear_accel_cov * pow(10, 3 - int(data.tracker_confidence))
+            covariance  = np.array([cov_pose,   0,          0,
+                                    0,          cov_pose,   0,
+                                    0,          0,          cov_pose])
+            
+            # Setup the message to be sent
+            msg = vehicle.message_factory.vision_speed_estimate_encode(
+                current_time_us,            # us Timestamp (UNIX time or time since system boot)
+                V_aeroRef_aeroBody[0][3],   # Global X speed
+                V_aeroRef_aeroBody[1][3],   # Global Y speed
+                V_aeroRef_aeroBody[2][3],   # Global Z speed
+                covariance,                 # covariance
+                reset_counter               # Estimate reset counter. Increment every time pose estimate jumps.
+            )
+            vehicle.send_mavlink(msg)
+            vehicle.flush()
+
+# Update the changes of confidence level on GCS and terminal
+def update_tracking_confidence_to_gcs():
+    if update_tracking_confidence_to_gcs.prev_confidence_level != data.tracker_confidence:
+        confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
+        send_msg_to_gcs(confidence_status_string)
+        update_tracking_confidence_to_gcs.prev_confidence_level = data.tracker_confidence
+
+# https://mavlink.io/en/messages/common.html#STATUSTEXT
 def send_msg_to_gcs(text_to_be_sent):
     # MAV_SEVERITY: 0=EMERGENCY 1=ALERT 2=CRITICAL 3=ERROR, 4=WARNING, 5=NOTICE, 6=INFO, 7=DEBUG, 8=ENUM_END
     # Defined here: https://mavlink.io/en/messages/common.html#MAV_SEVERITY
@@ -354,8 +420,18 @@ def vehicle_connect():
         is_vehicle_connected = True
         return True
 
+# List of notification events: https://github.com/IntelRealSense/librealsense/blob/development/include/librealsense2/h/rs_types.h
+# List of notification API: https://github.com/IntelRealSense/librealsense/blob/development/common/notifications.cpp
+def realsense_notification_callback(notif):
+    global reset_counter
+    print("INFO: T265 event: " + notif)
+    if notif.get_category() is rs.notification_category.pose_relocalization:
+        reset_counter += 1
+        send_msg_to_gcs('Relocalization detected')
+
 def realsense_connect():
-    global pipe
+    global pipe, pose_sensor
+    
     # Declare RealSense pipeline, encapsulating the actual device and sensors
     pipe = rs.pipeline()
 
@@ -363,7 +439,12 @@ def realsense_connect():
     cfg = rs.config()
 
     # Enable the stream we are interested in
-    cfg.enable_stream(rs.stream.pose) # Positional data 
+    cfg.enable_stream(rs.stream.pose) # Positional data
+
+    # Configure callback for relocalization event
+    device = cfg.resolve(pipe).get_device()
+    pose_sensor = device.first_pose_sensor()
+    pose_sensor.set_notifications_callback(realsense_notification_callback)
 
     # Start streaming with requested config
     pipe.start(cfg)
@@ -372,7 +453,7 @@ def realsense_connect():
 def user_input_monitor():
     global scale_factor
     while True:
-        # Specical case: updating scale
+        # Special case: updating scale
         if scale_calib_enable == True:
             scale_factor = float(input("INFO: Type in new scale as float number\n"))
             print("INFO: New scale is ", scale_factor)
@@ -424,8 +505,12 @@ if enable_msg_vision_position_delta:
     send_vision_position_delta_message.H_aeroRef_PrevAeroBody = tf.quaternion_matrix([1,0,0,0]) 
     send_vision_position_delta_message.prev_time_us = int(round(time.time() * 1000000))
 
+if enable_msg_vision_speed_estimate:
+    sched.add_job(send_vision_speed_estimate_message, 'interval', seconds = 1/vision_speed_estimate_msg_hz)
+
 if enable_update_tracking_confidence_to_gcs:
-    sched.add_job(send_tracking_confidence_to_gcs, 'interval', seconds = 1/update_tracking_confidence_to_gcs_hz_default)
+    sched.add_job(update_tracking_confidence_to_gcs, 'interval', seconds = 1/update_tracking_confidence_to_gcs_hz_default)
+    update_tracking_confidence_to_gcs.prev_confidence_level = -1
 
 # A separate thread to monitor user input
 user_keyboard_input_thread = threading.Thread(target=user_input_monitor)
@@ -478,6 +563,27 @@ try:
                 # Transform to aeronautic coordinates (body AND reference frame!)
                 H_aeroRef_aeroBody = H_aeroRef_T265Ref.dot( H_T265Ref_T265body.dot( H_T265body_aeroBody))
 
+                # Calculate GLOBAL XYZ speed (speed from T265 is already GLOBAL)
+                V_aeroRef_aeroBody = tf.quaternion_matrix([1,0,0,0])
+                V_aeroRef_aeroBody[0][3] = data.velocity.x
+                V_aeroRef_aeroBody[1][3] = data.velocity.y
+                V_aeroRef_aeroBody[2][3] = data.velocity.z
+                V_aeroRef_aeroBody = H_aeroRef_T265Ref.dot(V_aeroRef_aeroBody)
+
+                # Check for pose jump and increment reset_counter
+                if prev_data != None:
+                    delta_translation = [data.translation.x - prev_data.translation.x, data.translation.y - prev_data.translation.y, data.translation.z - prev_data.translation.z]
+                    position_displacement = np.linalg.norm(delta_translation)
+
+                    # Pose jump is indicated when position changes abruptly. The behavior is not well documented yet (as of librealsense 2.34.0)
+                    jump_threshold = 0.1 # in meters, from trials and errors, should be relative to how frequent is the position data obtained (200Hz for the T265)
+                    if (position_displacement > jump_threshold):
+                        send_msg_to_gcs('Pose jump detected')
+                        print("Position jumped by: ", position_displacement)
+                        reset_counter += 1
+                    
+                prev_data = data
+
                 # Take offsets from body's center of gravity (or IMU) to camera's origin into account
                 if body_offset_enabled == 1:
                     H_body_camera = tf.euler_matrix(0, 0, 0, 'sxyz')
@@ -503,7 +609,8 @@ except KeyboardInterrupt:
     send_msg_to_gcs('Closing the script...')  
 
 except:
-    send_msg_to_gcs('ERROR: Camera disconnected')  
+    send_msg_to_gcs('ERROR IN SCRIPT')  
+    print("Unexpected error:", sys.exc_info()[0])
 
 finally:
     pipe.stop()
