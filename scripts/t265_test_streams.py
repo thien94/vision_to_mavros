@@ -27,7 +27,7 @@ cfg.enable_stream(rs.stream.fisheye, 2) # Right camera
 pipe.start(cfg)
 
 try:
-    for _ in range(10):
+    while(1):
         frames = pipe.wait_for_frames()
 
         # Left fisheye camera frame
@@ -45,10 +45,10 @@ try:
         pose = frames.get_pose_frame()
         if pose:
             pose_data = pose.get_pose_data()
-            print('\nFrame number: ', pose.frame_number)
-            print('Position: ', pose_data.translation)
-            print('Velocity: ', pose_data.velocity)
-            print('Acceleration: ', pose_data.acceleration)
-            print('Rotation: ', pose_data.rotation)
+            print("\nFrame number: %5.0f" % (pose.frame_number))
+            print("Position xyz: % 2.4f % 2.4f % 2.4f" % (pose_data.translation.x, pose_data.translation.y, pose_data.translation.z))
+            print("Velocity xyz: % 2.4f % 2.4f % 2.4f" % (pose_data.velocity.x, pose_data.velocity.y, pose_data.velocity.z))
+            print("Accelera xyz: % 2.4f % 2.4f % 2.4f" % (pose_data.acceleration.x, pose_data.acceleration.y, pose_data.acceleration.z))
+            print("Quatern xyzw: % 2.4f % 2.4f % 2.4f % 2.4f" % (pose_data.rotation.x, pose_data.rotation.y, pose_data.rotation.z, pose_data.rotation.w))
 finally:
     pipe.stop()
