@@ -19,9 +19,9 @@ import cv2
 ######################################################
 STREAM_TYPE = [rs.stream.depth, rs.stream.color]  # rs2_stream is a types of data provided by RealSense device
 FORMAT      = [rs.format.z16, rs.format.bgr8]     # rs2_format is identifies how binary data is encoded within a frame
-WIDTH        = 640              # Defines the number of columns for each frame or zero for auto resolve
-HEIGHT       = 480              # Defines the number of lines for each frame or zero for auto resolve
-FPS          = 30               # Defines the rate of frames per second
+WIDTH       = 640              # Defines the number of columns for each frame or zero for auto resolve
+HEIGHT      = 480              # Defines the number of lines for each frame or zero for auto resolve
+FPS         = 30               # Defines the rate of frames per second
 ENABLE_SHOW_IMAGE = True
 
 # List of filters to be applied, in this order.
@@ -100,16 +100,15 @@ try:
         input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
         output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
 
-        # Show the images
         if ENABLE_SHOW_IMAGE:
             # Configure the settings
             display_image = np.hstack((input_image, cv2.resize(output_image, (WIDTH, HEIGHT))))
             display_name  = 'Input/output depth'
+
+            # Put the fps in the corner of the image
             text = ("%0.2f" % (processing_speed,)) + ' fps'
             textsize = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
             cv2.namedWindow(display_name, cv2.WINDOW_AUTOSIZE)
-
-            # Put the text in the image
             cv2.putText(display_image, 
                         text,
                         org = (int((display_image.shape[1] - textsize[0]/2)), int((textsize[1])/2)),
@@ -117,6 +116,8 @@ try:
                         fontScale = 0.5,
                         thickness = 1,
                         color = (255, 255, 255))
+
+            # Show the images with the fps
             cv2.imshow(display_name, display_image)
             cv2.waitKey(1)
 
