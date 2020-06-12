@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
 ######################################################
-## Python implementation of rs-depth.c example      ##
+## Python implementation of the following examples  ##
+## https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md
+## https://github.com/IntelRealSense/librealsense/tree/master/wrappers/opencv/depth-filter
 ## https://github.com/IntelRealSense/librealsense/tree/master/examples/C/depth
 ######################################################
 
-# First import the library
+# First import the libraries
 import sys
 import pyrealsense2 as rs           # Intel RealSense cross-platform open-source API
 import time
@@ -21,10 +23,37 @@ import cv2
 ######################################################
 STREAM_TYPE = [rs.stream.depth, rs.stream.color]  # rs2_stream is a types of data provided by RealSense device
 FORMAT      = [rs.format.z16, rs.format.bgr8]     # rs2_format is identifies how binary data is encoded within a frame
-WIDTH       = 640              # Defines the number of columns for each frame or zero for auto resolve
+WIDTH       = 848              # Defines the number of columns for each frame or zero for auto resolve
 HEIGHT      = 480              # Defines the number of lines for each frame or zero for auto resolve
 FPS         = 30               # Defines the rate of frames per second
 ENABLE_SHOW_IMAGE = True
+
+# List of filters to be applied, in this order.
+# Depth Frame                       (input)
+# >> Decimation Filter              (reduces depth frame density) 
+# >> Threshold Filter               (removes values outside recommended range)
+# >> Depth2Disparity Transform**    (transform the scene into disparity domain)
+# >> Spatial Filter                 (edge-preserving spatial smoothing)
+# >> Temporal Filter                (reduces temporal noise)
+# >> Hole Filling Filter            (rectify missing data in the resulting image)
+# >> Disparity2Depth Transform**    (revert the results back to depth)
+# >> Filtered Depth                 (output)
+filters = [
+    [True, "Decimation Filter",     rs.decimation_filter()],
+    [True, "Threshold Filter",      rs.threshold_filter()],
+    [True, "Depth to Disparity",    rs.disparity_transform(True)],
+    [True, "Spatial Filter",        rs.spatial_filter()],
+    [True, "Temporal Filter",       rs.temporal_filter()],
+    [True, "Hole Filling Filter",   rs.hole_filling_filter()],
+    [True, "Disparity to Depth",    rs.disparity_transform(False)]
+]
+
+# Configure the options of the filters
+# filters[0][2].set_option(rs.option.filter_magnitude, 4)
+# filters[4][2].set_option(rs.option.filter_magnitude, 5)
+# filters[4][2].set_option(rs.option.filter_smooth_alpha, 1)
+# filters[4][2].set_option(rs.option.filter_smooth_delta, 50)
+# filters[4][2].set_option(rs.option.holes_fill, 3)
 
 ######################################################
 ##      Main program starts here                    ##
@@ -39,38 +68,12 @@ try:
     config.enable_stream(STREAM_TYPE[1], WIDTH, HEIGHT, FORMAT[1], FPS)
     colorizer = rs.colorizer()
 
-    # Depth Frame  (input)
-    # >> Decimation Filter (reduces depth frame density) 
-    # >> Threshold Filter (removes values outside recommended range)
-    # >> Depth2Disparity Transform** (transform the scene into disparity domain)
-    # >> Spatial Filter (edge-preserving spatial smoothing)
-    # >> Temporal Filter (reduces temporal noise)
-    # >> Hole Filling Filter (rectify missing data in the resulting image)
-    # >> Disparity2Depth Transform** (revert the results back to depth)
-    # >> Filtered Depth (output).
-    filters = [ # Enable/disable, Display Name, Type
-        [True, "Decimation Filter",     rs.decimation_filter()],
-        [True, "Threshold Filter",      rs.threshold_filter()],
-        [True, "Depth to Disparity",    rs.disparity_transform(True)],
-        [True, "Spatial Filter",        rs.spatial_filter()],
-        [True, "Temporal Filter",       rs.temporal_filter()],
-        [False, "Hole Filling Filter",  rs.hole_filling_filter()],
-        [True,  "Disparity to Depth",   rs.disparity_transform(False)]
-    ]
-
     for i in range(len(filters)):
         if filters[i][0] is True:
             print("Applying: ", filters[i][1])
         else:
             print("NOT applying: ", filters[i][1])
-
-    # Configure the options of the filters
-    # filters[0][2].set_option(rs.option.filter_magnitude, 4)
-    # filters[4][2].set_option(rs.option.filter_magnitude, 5)
-    # filters[4][2].set_option(rs.option.filter_smooth_alpha, 1)
-    # filters[4][2].set_option(rs.option.filter_smooth_delta, 50)
-    # filters[4][2].set_option(rs.option.holes_fill, 3)
-
+    
     # Start streaming
     profile = pipeline.start(config)
 
@@ -96,13 +99,11 @@ try:
         last_time = time.time()
 
         if ENABLE_SHOW_IMAGE:
-            # Convert images to colorized numpy arrays
+            # Prepare the images
+            display_name  = 'Input/output depth'
             input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
             output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
-
-            # Configure the settings
             display_image = np.hstack((input_image, cv2.resize(output_image, (WIDTH, HEIGHT))))
-            display_name  = 'Input/output depth'
 
             # Put the fps in the corner of the image
             text = ("%0.2f" % (processing_speed,)) + ' fps'

@@ -7,8 +7,10 @@
 # Install required packages: 
 #   pip install pyrealsense2
 #   pip install transformations
-#   pip3 install dronekit
-#   pip3 install apscheduler
+#   pip install dronekit
+#   pip install apscheduler
+#   pip install -i https://pypi.anaconda.org/sklam/simple llvmlite
+#   pip install numba
 
 # Set the path for IDLE
 import sys
@@ -33,32 +35,43 @@ from pymavlink import mavutil
 
 from numba import njit              # pip install numba, or use anaconda to install
 
+# in order to import cv2 under python3 when you also have ROS installed
+sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages') 
+sys.path.append('~/anaconda3/lib/python3.7/site-packages') # Remove if not applicable to your system
+import cv2
+
 ######################################################
 ##        Depth parameters - reconfigurable         ##
 ######################################################
-STREAM_TYPE  = rs.stream.depth  # rs2_stream is a types of data provided by RealSense device
-FORMAT       = rs.format.z16    # rs2_format is identifies how binary data is encoded within a frame
-WIDTH        = 640              # Defines the number of columns for each frame or zero for auto resolve
-HEIGHT       = 480              # Defines the number of lines for each frame or zero for auto resolve
-FPS          = 30               # Defines the rate of frames per second
-HEIGHT_RATIO = 20               # Defines the height ratio between the original frame to the new frame
-WIDTH_RATIO  = 10               # Defines the width ratio between the original frame to the new frame
-MAX_TXT_IMG_DEPTH = 1           # Approximate the coverage of pixels within this range (meter)
-ROW_LENGTH   = int(WIDTH / WIDTH_RATIO)
-pixels       = " .:nhBXWW"      # The text-based representation of depth
-
 # Sensor-specific parameter, for D435: https://www.intelrealsense.com/depth-camera-d435/
+STREAM_TYPE = [rs.stream.depth, rs.stream.color]  # rs2_stream is a types of data provided by RealSense device
+FORMAT      = [rs.format.z16, rs.format.bgr8]     # rs2_format is identifies how binary data is encoded within a frame
+WIDTH       = 640              # Defines the number of columns for each frame or zero for auto resolve
+HEIGHT      = 480              # Defines the number of lines for each frame or zero for auto resolve
+FPS         = 30               # Defines the rate of frames per second
 HFOV        = 87
 DEPTH_RANGE = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
-MIN_DEPTH_CM = int(DEPTH_RANGE[0] * 100)  # In cm
-MAX_DEPTH_CM = int(DEPTH_RANGE[1] * 100)  # In cm, being a little conservative
 
 # Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
 # See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
+MIN_DEPTH_CM = int(DEPTH_RANGE[0] * 100)  # In cm
+MAX_DEPTH_CM = int(DEPTH_RANGE[1] * 100)  # In cm, being a little conservative
 DISTANCES_ARRAY_LEN = 72
-angle_offset = -(HFOV / 2)  # In the case of a forward facing camera with a horizontal wide view:
-increment_f  = HFOV / DISTANCES_ARRAY_LEN
+ANGLE_OFFSET = -(HFOV / 2)  # In the case of a forward facing camera with a horizontal wide view:
+INCREMENT_F  = HFOV / DISTANCES_ARRAY_LEN
 distances = np.ones((DISTANCES_ARRAY_LEN,), dtype=np.uint16) * (MAX_DEPTH_CM + 1)
+
+# List of filters to be applied, in this order.
+# https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md
+filters = [
+    [True, "Decimation Filter",     rs.decimation_filter()],
+    [True, "Threshold Filter",      rs.threshold_filter()],
+    [True, "Depth to Disparity",    rs.disparity_transform(True)],
+    [True, "Spatial Filter",        rs.spatial_filter()],
+    [True, "Temporal Filter",       rs.temporal_filter()],
+    [True, "Hole Filling Filter",   rs.hole_filling_filter()],
+    [True, "Disparity to Depth",    rs.disparity_transform(False)]
+]
 
 ######################################################
 ##                    Parameters                    ##
@@ -73,6 +86,7 @@ camera_orientation_default = 0
 
 # Enable/disable each message/function individually
 enable_msg_obstacle_distance = True
+enable_msg_distance_sensor = False
 obstacle_distance_msg_hz_default = 15
 
 # Default global position for EKF home/ origin
@@ -104,6 +118,8 @@ is_vehicle_connected = False
 # Camera-related variables
 pipe = None
 depth_scale = 0
+if debug_enable is True:
+    colorizer = rs.colorizer()
 
 # Data variables
 data = None
@@ -146,6 +162,13 @@ if not obstacle_distance_msg_hz:
 else:
     print("INFO: Using obstacle_distance_msg_hz", obstacle_distance_msg_hz)
 
+# The list of filters to be applied on the depth image
+for i in range(len(filters)):
+    if filters[i][0] is True:
+        print("INFO: Applying: ", filters[i][1])
+    else:
+        print("INFO: NOT applying: ", filters[i][1])
+
 if not debug_enable:
     debug_enable = 0
 else:
@@ -160,7 +183,7 @@ else:
 
 # https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
 def send_obstacle_distance_message():
-    global current_time_us, distances, MIN_DEPTH_CM, MAX_DEPTH_CM, increment_f, angle_offset
+    global current_time_us, distances
     msg = vehicle.message_factory.obstacle_distance_encode(
         current_time_us,    # us Timestamp (UNIX time or time since system boot)
         0,                  # sensor_type, defined here: https://mavlink.io/en/messages/common.html#MAV_DISTANCE_SENSOR
@@ -168,8 +191,8 @@ def send_obstacle_distance_message():
         0,                  # increment,    uint8_t,        deg
         MIN_DEPTH_CM,	    # min_distance, uint16_t,       cm
         MAX_DEPTH_CM,       # max_distance, uint16_t,       cm
-        increment_f,	    # increment_f,  float,          deg
-        angle_offset,       # angle_offset, float,          deg
+        INCREMENT_F,	    # increment_f,  float,          deg
+        ANGLE_OFFSET,       # angle_offset, float,          deg
         12                  # MAV_FRAME, vehicle-front aligned: https://mavlink.io/en/messages/common.html#MAV_FRAME_BODY_FRD    
     )
 
@@ -180,14 +203,12 @@ def send_obstacle_distance_message():
 # To-do: Possible extension for individual object detection
 def send_distance_sensor_message():
     global current_time, distances
-
     # Average out a portion of the centermost part
     curr_dist = int(np.mean(distances[33:38]))
-
     msg = vehicle.message_factory.distance_sensor_encode(
         0,              # us Timestamp (UNIX time or time since system boot) (ignored)
-        10,             # min_distance, uint16_t, cm
-        65,             # min_distance, uint16_t, cm
+        MIN_DEPTH_CM,   # min_distance, uint16_t, cm
+        MAX_DEPTH_CM,   # min_distance, uint16_t, cm
         curr_dist,      # current_distance,	uint16_t, cm	
         0,	            # type : 0 (ignored)
         0,              # id : 0 (ignored)
@@ -299,14 +320,14 @@ def realsense_connect():
     # Declare RealSense pipe, encapsulating the actual device and sensors
     pipe = rs.pipeline()
 
-    # Build config object before requesting data
-    cfg = rs.config()
-
-    # Enable the stream we are interested in
-    cfg.enable_stream(STREAM_TYPE, WIDTH, HEIGHT, FORMAT, FPS)
+    # Configure depth and color streams
+    config = rs.config()
+    config.enable_stream(STREAM_TYPE[0], WIDTH, HEIGHT, FORMAT[0], FPS)
+    if debug_enable is True:
+        config.enable_stream(STREAM_TYPE[1], WIDTH, HEIGHT, FORMAT[1], FPS)
 
     # Start streaming with requested config
-    profile = pipe.start(cfg)
+    profile = pipe.start(config)
 
     # Getting the depth sensor's depth scale (see rs-align example for explanation)
     depth_sensor = profile.get_device().first_depth_sensor()
@@ -335,49 +356,13 @@ def user_input_monitor():
                 print("Got keyboard input", c)
         except IOError: pass
 
-# Calculate a simple text-based representation of the image, by breaking it into WIDTH_RATIO x HEIGHT_RATIO pixel regions and approximating the coverage of pixels within MAX_TXT_IMG_DEPTH
 @njit
-def calculate_depth_txt_img(depth_mat):
-    img_txt = ""
-    coverage = [0] * ROW_LENGTH
-    for y in range(HEIGHT):
-        # Create a depth histogram for each row
-        for x in range(WIDTH):
-            dist = depth_mat[y,x] * depth_scale
-            if 0 < dist and dist < MAX_TXT_IMG_DEPTH:
-                coverage[x // WIDTH_RATIO] += 1
-
-        if y % HEIGHT_RATIO is (HEIGHT_RATIO - 1):
-            line = ""
-            for c in coverage:
-                pixel_index = c // int(HEIGHT_RATIO * WIDTH_RATIO / (len(pixels) - 1))  # Magic number: c // 25
-                line += pixels[pixel_index]
-            coverage = [0] * ROW_LENGTH
-            img_txt += line + "\n"
-            
-    return img_txt
-
-@njit
-def calculate_distances_from_depth(depth_mat, distances, min_depth_m, max_depth_m):
-    step = WIDTH / DISTANCES_ARRAY_LEN
-    radius = step / 2
+def distances_from_depth_image(depth_mat, distances, min_depth_m, max_depth_m):
+    depth_img_width  = depth_mat.shape[1]
+    depth_img_height = depth_mat.shape[0]
+    step = depth_img_width / DISTANCES_ARRAY_LEN
     for i in range(DISTANCES_ARRAY_LEN):
-
-        x_pixel_range_lower_bound = i * step - step / 2
-        if x_pixel_range_lower_bound < 0:
-            x_pixel_range_lower_bound = 0
-        
-        x_pixel_range_upper_bound = i * step + step / 2
-        if x_pixel_range_upper_bound > WIDTH - 1:
-            x_pixel_range_upper_bound = WIDTH - 1
-        
-        y_pixel_range_lower_bound = HEIGHT / 2 - step / 2
-        y_pixel_range_upper_bound = HEIGHT / 2 + step / 2
-
-        # dist_m = np.mean(depth_mat[int(y_pixel_range_lower_bound):int(y_pixel_range_upper_bound), int(x_pixel_range_lower_bound):int(x_pixel_range_upper_bound)]) * depth_scale
-        dist_m = np.mean(depth_mat[int(HEIGHT/2), int(x_pixel_range_lower_bound):int(x_pixel_range_upper_bound)]) * depth_scale
-        # dist_m = depth_mat[int(HEIGHT/2), int(i * step)] * depth_scale
-
+        dist_m = depth_mat[int(depth_img_height/2), int(i * step)] * depth_scale
         if dist_m < min_depth_m or dist_m > max_depth_m:
             distances[i] = max_depth_m * 100 + 1
         else:
@@ -399,9 +384,6 @@ send_msg_to_gcs('Camera connected.')
 # Send MAVlink messages in the background at pre-determined frequencies
 sched = BackgroundScheduler()
 
-if enable_msg_obstacle_distance:
-    sched.add_job(send_obstacle_distance_message, 'interval', seconds = 1/obstacle_distance_msg_hz)
-
 # A separate thread to monitor user input
 user_keyboard_input_thread = threading.Thread(target=user_input_monitor)
 user_keyboard_input_thread.daemon = True
@@ -410,7 +392,11 @@ user_keyboard_input_thread.start()
 sched.start()
 
 if enable_msg_obstacle_distance:
+    sched.add_job(send_obstacle_distance_message, 'interval', seconds = 1/obstacle_distance_msg_hz)
     send_msg_to_gcs('Sending obstacle distance messages to FCU')
+elif enable_msg_distance_sensor:
+    sched.add_job(send_distance_sensor_message, 'interval', seconds = 1/obstacle_distance_msg_hz)
+    send_msg_to_gcs('Sending distance sensor messages to FCU')
 else:
     send_msg_to_gcs('Nothing to do. Check params to enable something')
     pipe.stop()
@@ -419,21 +405,6 @@ else:
     sys.exit()
 
 print("INFO: Press Enter to set EKF home at default location")
-
-# Filters to be applied
-decimation = rs.decimation_filter()
-decimation.set_option(rs.option.filter_magnitude, 4)
-
-spatial = rs.spatial_filter()
-# spatial.set_option(rs.option.filter_magnitude, 5)
-# spatial.set_option(rs.option.filter_smooth_alpha, 1)
-# spatial.set_option(rs.option.filter_smooth_delta, 50)
-# spatial.set_option(rs.option.holes_fill, 3)
-
-hole_filling = rs.hole_filling_filter()
-
-depth_to_disparity = rs.disparity_transform(True)
-disparity_to_depth = rs.disparity_transform(False)
 
 # Begin of the main loop
 last_time = time.time()
@@ -450,35 +421,47 @@ try:
         # Store the timestamp for MAVLink messages
         current_time_us = int(round(time.time() * 1000000))
 
-        filtered_depth = depth_frame
-        # Apply the filter(s) according to this recommendation: https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md#using-filters-in-application-code
-        # filtered_depth = decimation.process(filtered_depth)
-        # filtered_depth = depth_to_disparity.process(filtered_depth)
-        # filtered_depth = spatial.process(filtered_depth)
-        # filtered_depth = disparity_to_depth.process(filtered_depth)
-        filtered_depth = hole_filling.process(filtered_depth)
+        # Apply the filters
+        filtered_frame = depth_frame
+        for i in range(len(filters)):
+            if filters[i][0] is True:
+                filtered_frame = filters[i][2].process(filtered_frame)
 
         # Extract depth in matrix form
-        depth_data = filtered_depth.as_frame().get_data()
+        depth_data = filtered_frame.as_frame().get_data()
         depth_mat = np.asanyarray(depth_data)
 
         # Create obstacle distance data from depth image
-        calculate_distances_from_depth(depth_mat, distances, DEPTH_RANGE[0], DEPTH_RANGE[1])
+        distances_from_depth_image(depth_mat, distances, DEPTH_RANGE[0], DEPTH_RANGE[1])
 
         if debug_enable:
-            img_txt = calculate_depth_txt_img(depth_mat)
-            print(img_txt)
-            
-            # Print some debugging messages
-            processing_time = time.time() - last_time
-            print("Text-based depth img within %.3f meter" % MAX_TXT_IMG_DEPTH)
-            print("Processing time per image: %.3f sec" % processing_time)
-            if processing_time > 0:
-                print("Processing freq per image: %.3f Hz" % (1/processing_time))
-            last_time = time.time()
+            # Prepare the images
+            display_name  = 'Input/output depth'
+            input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
+            output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
+            display_image = np.hstack((input_image, cv2.resize(output_image, (WIDTH, HEIGHT))))
+
+            # Put the fps in the corner of the image
+            processing_speed = 1 / (time.time() - last_time)
+            text = ("%0.2f" % (processing_speed,)) + ' fps'
+            textsize = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+            cv2.namedWindow(display_name, cv2.WINDOW_AUTOSIZE)
+            cv2.putText(display_image, 
+                        text,
+                        org = (int((display_image.shape[1] - textsize[0]/2)), int((textsize[1])/2)),
+                        fontFace = cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale = 0.5,
+                        thickness = 1,
+                        color = (255, 255, 255))
+
+            # Show the images
+            cv2.imshow(display_name, display_image)
+            cv2.waitKey(1)
 
             # Print all the distances in a line
             # print(*distances)
+            
+            last_time = time.time()
 
 except KeyboardInterrupt:
     send_msg_to_gcs('Closing the script...')  
