@@ -49,17 +49,16 @@ FORMAT      = [rs.format.z16, rs.format.bgr8]     # rs2_format is identifies how
 WIDTH       = 640              # Defines the number of columns for each frame or zero for auto resolve
 HEIGHT      = 480              # Defines the number of lines for each frame or zero for auto resolve
 FPS         = 30               # Defines the rate of frames per second
-HFOV        = 87
-DEPTH_RANGE = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
+DEPTH_RANGE = [0.1, 8.0]       # Replace with your sensor's specifics, in meter
 
 # Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
 # See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
-MIN_DEPTH_CM = int(DEPTH_RANGE[0] * 100)  # In cm
-MAX_DEPTH_CM = int(DEPTH_RANGE[1] * 100)  # In cm, being a little conservative
-DISTANCES_ARRAY_LEN = 72
-ANGLE_OFFSET = -(HFOV / 2)  # In the case of a forward facing camera with a horizontal wide view:
-INCREMENT_F  = HFOV / DISTANCES_ARRAY_LEN
-distances = np.ones((DISTANCES_ARRAY_LEN,), dtype=np.uint16) * (MAX_DEPTH_CM + 1)
+min_depth_cm = int(DEPTH_RANGE[0] * 100)  # In cm
+max_depth_cm = int(DEPTH_RANGE[1] * 100)  # In cm, should be a little conservative
+distances_array_length = 72
+angle_offset = 0
+increment_f  = 0
+distances = np.ones((distances_array_length,), dtype=np.uint16) * (max_depth_cm + 1)
 
 # List of filters to be applied, in this order.
 # https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md
@@ -184,20 +183,23 @@ else:
 # https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
 def send_obstacle_distance_message():
     global current_time_us, distances
-    msg = vehicle.message_factory.obstacle_distance_encode(
-        current_time_us,    # us Timestamp (UNIX time or time since system boot)
-        0,                  # sensor_type, defined here: https://mavlink.io/en/messages/common.html#MAV_DISTANCE_SENSOR
-        distances,          # distances,    uint16_t[72],   cm
-        0,                  # increment,    uint8_t,        deg
-        MIN_DEPTH_CM,	    # min_distance, uint16_t,       cm
-        MAX_DEPTH_CM,       # max_distance, uint16_t,       cm
-        INCREMENT_F,	    # increment_f,  float,          deg
-        ANGLE_OFFSET,       # angle_offset, float,          deg
-        12                  # MAV_FRAME, vehicle-front aligned: https://mavlink.io/en/messages/common.html#MAV_FRAME_BODY_FRD    
-    )
+    if angle_offset == 0 or increment_f == 0:
+        print("Please call set_obstacle_distance_params before continue")
+    else:
+        msg = vehicle.message_factory.obstacle_distance_encode(
+            current_time_us,    # us Timestamp (UNIX time or time since system boot)
+            0,                  # sensor_type, defined here: https://mavlink.io/en/messages/common.html#MAV_DISTANCE_SENSOR
+            distances,          # distances,    uint16_t[72],   cm
+            0,                  # increment,    uint8_t,        deg
+            min_depth_cm,	    # min_distance, uint16_t,       cm
+            max_depth_cm,       # max_distance, uint16_t,       cm
+            increment_f,	    # increment_f,  float,          deg
+            angle_offset,       # angle_offset, float,          deg
+            12                  # MAV_FRAME, vehicle-front aligned: https://mavlink.io/en/messages/common.html#MAV_FRAME_BODY_FRD    
+        )
 
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
+        vehicle.send_mavlink(msg)
+        vehicle.flush()
 
 # https://mavlink.io/en/messages/common.html#DISTANCE_SENSOR
 # To-do: Possible extension for individual object detection
@@ -207,8 +209,8 @@ def send_distance_sensor_message():
     curr_dist = int(np.mean(distances[33:38]))
     msg = vehicle.message_factory.distance_sensor_encode(
         0,              # us Timestamp (UNIX time or time since system boot) (ignored)
-        MIN_DEPTH_CM,   # min_distance, uint16_t, cm
-        MAX_DEPTH_CM,   # min_distance, uint16_t, cm
+        min_depth_cm,   # min_distance, uint16_t, cm
+        max_depth_cm,   # min_distance, uint16_t, cm
         curr_dist,      # current_distance,	uint16_t, cm	
         0,	            # type : 0 (ignored)
         0,              # id : 0 (ignored)
@@ -235,48 +237,6 @@ def send_msg_to_gcs(text_to_be_sent):
     else:
         print("INFO: Vehicle not connected. Cannot send text message to Ground Control Station (GCS)")
 
-# Send a mavlink SET_GPS_GLOBAL_ORIGIN message (http://mavlink.org/messages/common#SET_GPS_GLOBAL_ORIGIN), which allows us to use local position information without a GPS.
-def set_default_global_origin():
-    if is_vehicle_connected == True:
-        msg = vehicle.message_factory.set_gps_global_origin_encode(
-            int(vehicle._master.source_system),
-            home_lat, 
-            home_lon,
-            home_alt
-        )
-
-        vehicle.send_mavlink(msg)
-        vehicle.flush()
-
-# Send a mavlink SET_HOME_POSITION message (http://mavlink.org/messages/common#SET_HOME_POSITION), which allows us to use local position information without a GPS.
-def set_default_home_position():
-    if is_vehicle_connected == True:
-        x = 0
-        y = 0
-        z = 0
-        q = [1, 0, 0, 0]   # w x y z
-
-        approach_x = 0
-        approach_y = 0
-        approach_z = 1
-
-        msg = vehicle.message_factory.set_home_position_encode(
-            int(vehicle._master.source_system),
-            home_lat, 
-            home_lon,
-            home_alt,
-            x,
-            y,
-            z,
-            q,
-            approach_x,
-            approach_y,
-            approach_z
-        )
-
-        vehicle.send_mavlink(msg)
-        vehicle.flush()
-
 # Request a timesync update from the flight controller, for future work.
 # TODO: Inspect the usage of timesync_update 
 def update_timesync(ts=0, tc=0):
@@ -299,6 +259,7 @@ def att_msg_callback(self, attr_name, value):
         heading_north_yaw = value.yaw
         print("INFO: Received ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
 
+# Establish connection to the FCU
 def vehicle_connect():
     global vehicle, is_vehicle_connected
     
@@ -315,6 +276,7 @@ def vehicle_connect():
         is_vehicle_connected = True
         return True
 
+# Establish connection to the Realsense camera
 def realsense_connect():
     global pipe, depth_scale
     # Declare RealSense pipe, encapsulating the actual device and sensors
@@ -334,35 +296,50 @@ def realsense_connect():
     depth_scale = depth_sensor.get_depth_scale()
     print("INFO: Depth scale is: ", depth_scale)
 
-# Monitor user input from the terminal and perform action accordingly
-def user_input_monitor():
-    global scale_factor
-    while True:
-        if enable_auto_set_ekf_home:
-            send_msg_to_gcs('Set EKF home with default GPS location')
-            set_default_global_origin()
-            set_default_home_position()
-            time.sleep(1) # Wait a short while for FCU to start working
+# Setting parameters for the OBSTACLE_DISTANCE message based on actual camera's intrinsics and user-defined params
+def set_obstacle_distance_params():
+    global angle_offset, increment_f, depth_scale
+    
+    # Obtain the intrinsics from the camera itself
+    profiles = pipe.get_active_profile()
+    depth_intrinsics = profiles.get_stream(STREAM_TYPE[0]).as_video_stream_profile().intrinsics
+    print("INFO: Depth camera intrinsics: ", depth_intrinsics)
+    
+    # For forward facing camera with a horizontal wide view:
+    # HFOV=2*atan[w/(2.fx)], VFOV=2*atan[h/(2.fy)], DFOV=2*atan(Diag/2*f), Diag=sqrt(w^2 + h^2)
+    HFOV = m.degrees(2 * m.atan(WIDTH / (2 * depth_intrinsics.fx)))
+    angle_offset = -(HFOV / 2) 
+    increment_f  =  HFOV / distances_array_length
+    print("INFO: Depth camera HFOV: %0.2f degrees" % HFOV)
 
-        # Add new action here according to the key pressed.
-        # Enter: Set EKF home when user press enter
-        try:
-            c = input()
-            if c == "":
-                send_msg_to_gcs('Set EKF home with default GPS location')
-                set_default_global_origin()
-                set_default_home_position()
-            else:
-                print("Got keyboard input", c)
-        except IOError: pass
-
+# Calculate the distances array by dividing the FOV (horizontal) into $distances_array_length rays,
+# then pick out the depth value at the pixel corresponding to each ray. Based on the definition of
+# the MAVLink messages, the invalid distance value (below MIN/above MAX) will be replaced with MAX+1.
+#    
+# [0]    [35]   [71]    <- Output: distances[72]
+#  |      |      |      <- step = width / 72
+#  ---------------      <- horizontal line, or height/2
+#  \      |      /
+#   \     |     /
+#    \    |    /
+#     \   |   /
+#      \  |  /
+#       \ | /           
+#       Camera          <- Input: depth_mat, obtained from depth image
+#
+# Note that we assume the input depth_mat is already processed by at least hole-filling filter.
+# Otherwise, the output array might not be stable from frame to frame.
 @njit
 def distances_from_depth_image(depth_mat, distances, min_depth_m, max_depth_m):
     depth_img_width  = depth_mat.shape[1]
     depth_img_height = depth_mat.shape[0]
-    step = depth_img_width / DISTANCES_ARRAY_LEN
-    for i in range(DISTANCES_ARRAY_LEN):
+    step = depth_img_width / distances_array_length
+
+    for i in range(distances_array_length):
+        # Converting depth from uint16_t unit to metric unit. depth_scale is usually 1mm following ROS convention.
         dist_m = depth_mat[int(depth_img_height/2), int(i * step)] * depth_scale
+
+        # Note that dist_m is in meter, while distances[] is in cm.
         if dist_m < min_depth_m or dist_m > max_depth_m:
             distances[i] = max_depth_m * 100 + 1
         else:
@@ -381,15 +358,10 @@ send_msg_to_gcs('Connecting to camera...')
 realsense_connect()
 send_msg_to_gcs('Camera connected.')
 
+set_obstacle_distance_params()
+
 # Send MAVlink messages in the background at pre-determined frequencies
 sched = BackgroundScheduler()
-
-# A separate thread to monitor user input
-user_keyboard_input_thread = threading.Thread(target=user_input_monitor)
-user_keyboard_input_thread.daemon = True
-user_keyboard_input_thread.start()
-
-sched.start()
 
 if enable_msg_obstacle_distance:
     sched.add_job(send_obstacle_distance_message, 'interval', seconds = 1/obstacle_distance_msg_hz)
@@ -404,7 +376,7 @@ else:
     print("INFO: Realsense pipe and vehicle object closed.")
     sys.exit()
 
-print("INFO: Press Enter to set EKF home at default location")
+sched.start()
 
 # Begin of the main loop
 last_time = time.time()
