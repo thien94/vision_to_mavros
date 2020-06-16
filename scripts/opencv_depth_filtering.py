@@ -29,7 +29,8 @@ FORMAT      = [rs.format.z16, rs.format.bgr8]     # rs2_format is identifies how
 WIDTH       = 848              # Defines the number of columns for each frame or zero for auto resolve
 HEIGHT      = 480              # Defines the number of lines for each frame or zero for auto resolve
 FPS         = 30               # Defines the rate of frames per second
-ENABLE_SHOW_IMAGE = True
+DISPLAY_WINDOW_NAME = 'Input/output depth'
+OPTION_WINDOW_NAME  = 'Filter options'
 
 # List of filters to be applied, in this order.
 # Depth Frame                       (input)
@@ -51,12 +52,69 @@ filters = [
     [True, "Disparity to Depth",    rs.disparity_transform(False)]
 ]
 
-# Configure the options of the filters
-# filters[0][2].set_option(rs.option.filter_magnitude, 4)
-# filters[4][2].set_option(rs.option.filter_magnitude, 5)
-# filters[4][2].set_option(rs.option.filter_smooth_alpha, 1)
-# filters[4][2].set_option(rs.option.filter_smooth_delta, 50)
-# filters[4][2].set_option(rs.option.holes_fill, 3)
+######################################################
+##   Functions to change filtering options online   ##
+##   Description for each option can be found at:   ##
+## https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md
+######################################################
+decimation_magnitude_min = 2
+decimation_magnitude_max = 8
+def on_trackbar_decimation(val):
+    # Sanity check
+    if val < decimation_magnitude_min:
+        print("\nFilter magnitude for Decimation Filter cannot be smaller than ", decimation_magnitude_min)
+        val = decimation_magnitude_min
+    
+    filters[0][2].set_option(rs.option.filter_magnitude, val)
+
+spatial_magnitude_min = 1
+spatial_magnitude_max = 5
+def on_trackbar_spatial_magnitude(val):
+    # Sanity check
+    if val < spatial_magnitude_min:
+        print("\nFilter magnitude for Spatial Filter cannot be smaller than ", spatial_magnitude_min)
+        val = spatial_magnitude_min
+    
+    filters[3][2].set_option(rs.option.filter_magnitude, val)
+
+spatial_smooth_alpha_min = 0.25
+spatial_smooth_alpha_max = 1
+spatial_smooth_alpha_scaled_max = 10
+def on_trackbar_spatial_smooth_alpha(val):
+    # Step in cv2 trackbar only allows discrete value, so we remap it from [0-spatial_smooth_alpha_scaled_max] to [0-spatial_smooth_alpha_max]
+    val = val / spatial_smooth_alpha_scaled_max * spatial_smooth_alpha_max
+    # Sanity check
+    if val < spatial_smooth_alpha_min:
+        print("\nFilter magnitude for Spatial Filter cannot be smaller than ", spatial_smooth_alpha_min)
+        val = spatial_smooth_alpha_min
+    
+    filters[3][2].set_option(rs.option.filter_smooth_alpha, val)
+
+spatial_smooth_delta_min = 1
+spatial_smooth_delta_max = 50
+def on_trackbar_spatial_smooth_delta(val):
+    # Sanity check
+    if val < spatial_smooth_delta_min:
+        print("\nSmooth alpha for Spatial Filter cannot be smaller than ", spatial_smooth_delta_min)
+        val = spatial_smooth_delta_min
+    
+    filters[3][2].set_option(rs.option.filter_smooth_delta, val)
+
+spatial_hole_filling_min = 0
+spatial_hole_filling_max = 5
+def on_trackbar_spatial_hole_filling(val):
+    # Sanity check
+    if val < spatial_hole_filling_min:
+        print("\nSmooth alpha for Spatial Filter cannot be smaller than ", spatial_hole_filling_min)
+        val = spatial_hole_filling_min
+    
+    filters[3][2].set_option(rs.option.holes_fill, val)
+
+hole_filling_filter_min = 0
+hole_filling_filter_max = 2 
+def on_trackbar_hole_filling(val):
+    # direction: 0-from left, 1-farest from around, 2-nearest from around
+    filters[5][2].set_option(rs.option.holes_fill, val)
 
 ######################################################
 ##      Main program starts here                    ##
@@ -80,6 +138,22 @@ try:
     # Start streaming
     profile = pipeline.start(config)
 
+    # Create the image windows to be used
+    cv2.namedWindow(OPTION_WINDOW_NAME, cv2.WINDOW_NORMAL)
+    cv2.namedWindow(DISPLAY_WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
+
+    # Create trackbars for options modifiers
+    # NOTE: - The trackbar's minimum is always zero and cannot be changed
+    #       - The trackbar's steps are discrete (so 0-1-2 etc.)
+    cv2.createTrackbar('Decimation magnitude [2-8]', OPTION_WINDOW_NAME, 0, decimation_magnitude_max, on_trackbar_decimation)
+    cv2.createTrackbar('Spatial magnitude [1-5]', OPTION_WINDOW_NAME, 0, spatial_magnitude_max, on_trackbar_spatial_magnitude)
+    cv2.createTrackbar('Spatial smooth alpha [0.25-1]', OPTION_WINDOW_NAME, 0, spatial_smooth_alpha_scaled_max, on_trackbar_spatial_smooth_alpha)
+    cv2.createTrackbar('Spatial smooth delta [1-50]', OPTION_WINDOW_NAME, 0, spatial_smooth_delta_max, on_trackbar_spatial_smooth_delta)
+    cv2.createTrackbar('Spatial hole filling [0-5]', OPTION_WINDOW_NAME, 0, spatial_hole_filling_max, on_trackbar_spatial_hole_filling)
+    cv2.createTrackbar('Hole filling direction [0-2]', OPTION_WINDOW_NAME, 0, hole_filling_filter_max, on_trackbar_hole_filling)
+    # Avoid unnecessary blank space in the displayed window
+    cv2.resizeWindow(OPTION_WINDOW_NAME, 600, 100)
+
     last_time = time.time()
     while True:
         # This call waits until a new coherent set of frames is available on a device
@@ -101,28 +175,25 @@ try:
         print("\r>> Processing speed %.2f fps" %(processing_speed), end='')
         last_time = time.time()
 
-        if ENABLE_SHOW_IMAGE:
-            # Prepare the images
-            display_name  = 'Input/output depth'
-            input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
-            output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
-            display_image = np.hstack((input_image, cv2.resize(output_image, (WIDTH, HEIGHT))))
+        # Prepare the images
+        input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
+        output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
+        display_image = np.hstack((input_image, cv2.resize(output_image, (WIDTH, HEIGHT))))
 
-            # Put the fps in the corner of the image
-            text = ("%0.2f" % (processing_speed,)) + ' fps'
-            textsize = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
-            cv2.namedWindow(display_name, cv2.WINDOW_AUTOSIZE)
-            cv2.putText(display_image, 
-                        text,
-                        org = (int((display_image.shape[1] - textsize[0]/2)), int((textsize[1])/2)),
-                        fontFace = cv2.FONT_HERSHEY_SIMPLEX,
-                        fontScale = 0.5,
-                        thickness = 1,
-                        color = (255, 255, 255))
+        # Put the fps in the corner of the image
+        text = ("%0.2f" % (processing_speed,)) + ' fps'
+        textsize = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+        cv2.putText(display_image, 
+                    text,
+                    org = (int((display_image.shape[1] - textsize[0]/2)), int((textsize[1])/2)),
+                    fontFace = cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale = 0.5,
+                    thickness = 1,
+                    color = (255, 255, 255))
 
-            # Show the images with the fps
-            cv2.imshow(display_name, display_image)
-            cv2.waitKey(1)
+        # Show the images with the fps
+        cv2.imshow(DISPLAY_WINDOW_NAME, display_image)
+        cv2.waitKey(1)
 
 except KeyboardInterrupt:
     print('Keyboard interrupt. Closing the script...')
