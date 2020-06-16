@@ -36,8 +36,11 @@ from pymavlink import mavutil
 from numba import njit              # pip install numba, or use anaconda to install
 
 # in order to import cv2 under python3 when you also have ROS installed
-sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages') 
-sys.path.append('~/anaconda3/lib/python3.7/site-packages') # Remove if not applicable to your system
+import os
+if os.path.exists("/opt/ros/kinetic/lib/python2.7/dist-packages"):
+    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages') 
+if os.path.exists("~/anaconda3/lib/python3.7/site-packages"):
+    sys.path.append('~/anaconda3/lib/python3.7/site-packages')
 import cv2
 
 ######################################################
