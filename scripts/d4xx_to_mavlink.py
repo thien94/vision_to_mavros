@@ -3,7 +3,10 @@
 #####################################################
 ##          librealsense D4xx to MAVLink           ##
 #####################################################
-# Requirements: Intel x64/86 board, Ubuntu 18.04, Python3
+# Requirements: 
+#   x86 based Companion Computer (for compatibility with Intel),
+#   Ubuntu 18.04 (otherwise, the following installation instruction might not work),
+#   Python3 (default with Ubuntu 18.04)
 # Install required packages: 
 #   pip3 install pyrealsense2
 #   pip3 install transformations
@@ -14,7 +17,8 @@
 # Only necessary if you installed the minimal version of Ubuntu:
 #   sudo apt install python3-opencv
 
-# Set the path for pyrealsense2.[].so, otherwise place the pyrealsense2.[].so file under the same directory as this script
+# Set the path for pyrealsense2.[].so
+# Otherwise, place the pyrealsense2.[].so file under the same directory as this script or modify PYTHONPATH
 import sys
 sys.path.append("/usr/local/lib/")
 
@@ -36,7 +40,7 @@ from dronekit import connect, VehicleMode
 from pymavlink import mavutil
 from numba import njit
 
-# in order to import cv2 under python3 when you also have ROS installed
+# In order to import cv2 under python3 when you also have ROS installed
 import os
 if os.path.exists("/opt/ros/kinetic/lib/python2.7/dist-packages"):
     sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages') 
@@ -54,15 +58,6 @@ WIDTH       = 640              # Defines the number of columns for each frame or
 HEIGHT      = 480              # Defines the number of lines for each frame or zero for auto resolve
 FPS         = 30               # Defines the rate of frames per second
 DEPTH_RANGE = [0.1, 8.0]       # Replace with your sensor's specifics, in meter
-
-# Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
-# See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
-min_depth_cm = int(DEPTH_RANGE[0] * 100)  # In cm
-max_depth_cm = int(DEPTH_RANGE[1] * 100)  # In cm, should be a little conservative
-distances_array_length = 72
-angle_offset = 0
-increment_f  = 0
-distances = np.ones((distances_array_length,), dtype=np.uint16) * (max_depth_cm + 1)
 
 # List of filters to be applied, in this order.
 # https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md
@@ -127,6 +122,15 @@ if debug_enable is True:
 # Data variables
 data = None
 current_time_us = 0
+
+# Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
+# See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
+min_depth_cm = int(DEPTH_RANGE[0] * 100)  # In cm
+max_depth_cm = int(DEPTH_RANGE[1] * 100)  # In cm, should be a little conservative
+distances_array_length = 72
+angle_offset = 0
+increment_f  = 0
+distances = np.ones((distances_array_length,), dtype=np.uint16) * (max_depth_cm + 1)
 
 #######################################
 # Parsing user' inputs
@@ -343,7 +347,7 @@ def distances_from_depth_image(depth_mat, distances, min_depth_m, max_depth_m):
         # Converting depth from uint16_t unit to metric unit. depth_scale is usually 1mm following ROS convention.
         dist_m = depth_mat[int(depth_img_height/2), int(i * step)] * depth_scale
 
-        # Default value unless overwritten. 
+        # Default value, unless overwritten: 
         #   A value of max_distance + 1 (cm) means no obstacle is present. 
         #   A value of UINT16_MAX (65535) for unknown/not used.
         distances[i] = 65535
