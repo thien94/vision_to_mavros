@@ -3,16 +3,18 @@
 #####################################################
 ##          librealsense D4xx to MAVLink           ##
 #####################################################
-# This script assumes pyrealsense2.[].so file is found under the same directory as this script
+# Requirements: Intel x64/86 board, Ubuntu 18.04, Python3
 # Install required packages: 
-#   pip install pyrealsense2
-#   pip install transformations
-#   pip install dronekit
-#   pip install apscheduler
-#   pip install -i https://pypi.anaconda.org/sklam/simple llvmlite
-#   pip install numba
+#   pip3 install pyrealsense2
+#   pip3 install transformations
+#   pip3 install dronekit
+#   pip3 install apscheduler
+#   pip3 install pyserial
+#   pip3 install numba
+# Only necessary if you installed the minimal version of Ubuntu:
+#   sudo apt install python3-opencv
 
-# Set the path for IDLE
+# Set the path for pyrealsense2.[].so, otherwise place the pyrealsense2.[].so file under the same directory as this script
 import sys
 sys.path.append("/usr/local/lib/")
 
@@ -32,8 +34,7 @@ from time import sleep
 from apscheduler.schedulers.background import BackgroundScheduler
 from dronekit import connect, VehicleMode
 from pymavlink import mavutil
-
-from numba import njit              # pip install numba, or use anaconda to install
+from numba import njit
 
 # in order to import cv2 under python3 when you also have ROS installed
 import os
@@ -342,10 +343,13 @@ def distances_from_depth_image(depth_mat, distances, min_depth_m, max_depth_m):
         # Converting depth from uint16_t unit to metric unit. depth_scale is usually 1mm following ROS convention.
         dist_m = depth_mat[int(depth_img_height/2), int(i * step)] * depth_scale
 
+        # Default value unless overwritten. 
+        #   A value of max_distance + 1 (cm) means no obstacle is present. 
+        #   A value of UINT16_MAX (65535) for unknown/not used.
+        distances[i] = 65535
+
         # Note that dist_m is in meter, while distances[] is in cm.
-        if dist_m < min_depth_m or dist_m > max_depth_m:
-            distances[i] = max_depth_m * 100 + 1
-        else:
+        if dist_m > min_depth_m and dist_m < max_depth_m:
             distances[i] = dist_m * 100
 
 #######################################
