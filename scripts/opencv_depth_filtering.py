@@ -5,6 +5,7 @@
 ## https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md
 ## https://github.com/IntelRealSense/librealsense/tree/master/wrappers/opencv/depth-filter
 ## https://github.com/IntelRealSense/librealsense/tree/master/examples/C/depth
+## https://github.com/IntelRealSense/librealsense/blob/master/wrappers/python/examples/python-rs400-advanced-mode-example.py
 ######################################################
 
 # First import the libraries
@@ -12,6 +13,7 @@ import sys
 import pyrealsense2 as rs           # Intel RealSense cross-platform open-source API
 import time
 import numpy as np                  # fundamental package for scientific computing
+import json
 
 # in order to import cv2 under python3 when you also have ROS installed
 import os
@@ -31,6 +33,9 @@ HEIGHT      = 480              # Defines the number of lines for each frame or z
 FPS         = 30               # Defines the rate of frames per second
 DISPLAY_WINDOW_NAME = 'Input/output depth'
 OPTION_WINDOW_NAME  = 'Filter options'
+
+USE_PRESET_FILE = True
+PRESET_FILE  = "camera-settings.json"
 
 # List of filters to be applied, in this order.
 # Depth Frame                       (input)
@@ -117,9 +122,65 @@ def on_trackbar_hole_filling(val):
     filters[5][2].set_option(rs.option.holes_fill, val)
 
 ######################################################
+##      Functions to interface with D4xx cameras    ##
+######################################################
+DS5_product_ids = ["0AD1", "0AD2", "0AD3", "0AD4", "0AD5", "0AF6", "0AFE", "0AFF", "0B00", "0B01", "0B03", "0B07","0B3A"]
+
+def find_device_that_supports_advanced_mode() :
+    ctx = rs.context()
+    ds5_dev = rs.device()
+    devices = ctx.query_devices();
+    for dev in devices:
+        if dev.supports(rs.camera_info.product_id) and str(dev.get_info(rs.camera_info.product_id)) in DS5_product_ids:
+            if dev.supports(rs.camera_info.name):
+                print("Found device that supports advanced mode:", dev.get_info(rs.camera_info.name))
+            return dev
+    raise Exception("No device that supports advanced mode was found")
+
+# Loop until we successfully enable advanced mode
+def d4xx_enable_advanced_mode(advnc_mode):
+    while not advnc_mode.is_enabled():
+        print("Trying to enable advanced mode...")
+        advnc_mode.toggle_advanced_mode(True)
+        # At this point the device will disconnect and re-connect.
+        print("Sleeping for 5 seconds...")
+        time.sleep(5)
+        # The 'dev' object will become invalid and we need to initialize it again
+        dev = find_device_that_supports_advanced_mode()
+        advnc_mode = rs.rs400_advanced_mode(dev)
+        print("Advanced mode is", "enabled" if advnc_mode.is_enabled() else "disabled")
+
+# Load the settings stored in the JSON file
+def d4xx_load_settings_file(advnc_mode, setting_file):
+    # Sanity checks
+    if os.path.isfile(setting_file):
+        print("Setting file found", setting_file)
+    else:
+        print("Cannot find setting file ", setting_file)
+        exit()
+
+    if advnc_mode.is_enabled():
+        print("Advanced mode is enabled")
+    else:
+        print("Device does not support advanced mode")
+        exit()
+    
+    # Input for load_json() is the content of the json file, not the file path
+    with open(setting_file, 'r') as file:
+        json_text = file.read().strip()
+
+    advnc_mode.load_json(json_text)
+
+######################################################
 ##      Main program starts here                    ##
 ######################################################
 try:
+    if USE_PRESET_FILE:
+        device = find_device_that_supports_advanced_mode()
+        advnc_mode = rs.rs400_advanced_mode(device)
+        d4xx_enable_advanced_mode(advnc_mode)
+        d4xx_load_settings_file(advnc_mode, PRESET_FILE)
+
     # Create a context object. This object owns the handles to all connected realsense devices
     pipeline = rs.pipeline()
 
