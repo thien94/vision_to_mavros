@@ -34,6 +34,7 @@ import math as m
 import time
 import argparse
 import threading
+import json
 from time import sleep
 from apscheduler.schedulers.background import BackgroundScheduler
 from dronekit import connect, VehicleMode
@@ -58,6 +59,9 @@ WIDTH       = 640              # Defines the number of columns for each frame or
 HEIGHT      = 480              # Defines the number of lines for each frame or zero for auto resolve
 FPS         = 30               # Defines the rate of frames per second
 DEPTH_RANGE = [0.1, 8.0]       # Replace with your sensor's specifics, in meter
+
+USE_PRESET_FILE = True
+PRESET_FILE  = "../cfg/d4xx-default.json"
 
 # List of filters to be applied, in this order.
 # https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md
@@ -105,6 +109,9 @@ lock = threading.Lock()
 
 debug_enable = True
 
+if debug_enable is True:
+    display_name  = 'Input/output depth'
+
 #######################################
 # Global variables
 #######################################
@@ -131,6 +138,7 @@ distances_array_length = 72
 angle_offset = 0
 increment_f  = 0
 distances = np.ones((distances_array_length,), dtype=np.uint16) * (max_depth_cm + 1)
+
 
 #######################################
 # Parsing user' inputs
@@ -284,6 +292,56 @@ def vehicle_connect():
         is_vehicle_connected = True
         return True
 
+######################################################
+##      Functions to interface with D4xx cameras    ##
+######################################################
+DS5_product_ids = ["0AD1", "0AD2", "0AD3", "0AD4", "0AD5", "0AF6", "0AFE", "0AFF", "0B00", "0B01", "0B03", "0B07","0B3A"]
+
+def find_device_that_supports_advanced_mode() :
+    ctx = rs.context()
+    ds5_dev = rs.device()
+    devices = ctx.query_devices();
+    for dev in devices:
+        if dev.supports(rs.camera_info.product_id) and str(dev.get_info(rs.camera_info.product_id)) in DS5_product_ids:
+            if dev.supports(rs.camera_info.name):
+                print("INFO: Found device that supports advanced mode:", dev.get_info(rs.camera_info.name))
+            return dev
+    raise Exception("No device that supports advanced mode was found")
+
+# Loop until we successfully enable advanced mode
+def realsense_enable_advanced_mode(advnc_mode):
+    while not advnc_mode.is_enabled():
+        print("INFO: Trying to enable advanced mode...")
+        advnc_mode.toggle_advanced_mode(True)
+        # At this point the device will disconnect and re-connect.
+        print("INFO: Sleeping for 5 seconds...")
+        time.sleep(5)
+        # The 'dev' object will become invalid and we need to initialize it again
+        dev = find_device_that_supports_advanced_mode()
+        advnc_mode = rs.rs400_advanced_mode(dev)
+        print("INFO: Advanced mode is", "enabled" if advnc_mode.is_enabled() else "disabled")
+
+# Load the settings stored in the JSON file
+def realsense_load_settings_file(advnc_mode, setting_file):
+    # Sanity checks
+    if os.path.isfile(setting_file):
+        print("INFO: Setting file found", setting_file)
+    else:
+        print("INFO: Cannot find setting file ", setting_file)
+        exit()
+
+    if advnc_mode.is_enabled():
+        print("INFO: Advanced mode is enabled")
+    else:
+        print("INFO: Device does not support advanced mode")
+        exit()
+    
+    # Input for load_json() is the content of the json file, not the file path
+    with open(setting_file, 'r') as file:
+        json_text = file.read().strip()
+
+    advnc_mode.load_json(json_text)
+
 # Establish connection to the Realsense camera
 def realsense_connect():
     global pipe, depth_scale
@@ -303,6 +361,12 @@ def realsense_connect():
     depth_sensor = profile.get_device().first_depth_sensor()
     depth_scale = depth_sensor.get_depth_scale()
     print("INFO: Depth scale is: ", depth_scale)
+
+def realsense_configure_setting(setting_file):
+    device = find_device_that_supports_advanced_mode()
+    advnc_mode = rs.rs400_advanced_mode(device)
+    realsense_enable_advanced_mode(advnc_mode)
+    realsense_load_settings_file(advnc_mode, setting_file)
 
 # Setting parameters for the OBSTACLE_DISTANCE message based on actual camera's intrinsics and user-defined params
 def set_obstacle_distance_params():
@@ -366,6 +430,8 @@ while (not vehicle_connect()):
 print("INFO: Vehicle connected.")
 
 send_msg_to_gcs('Connecting to camera...')
+if USE_PRESET_FILE:
+    realsense_configure_setting(PRESET_FILE)
 realsense_connect()
 send_msg_to_gcs('Camera connected.')
 
@@ -419,7 +485,6 @@ try:
 
         if debug_enable:
             # Prepare the images
-            display_name  = 'Input/output depth'
             input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
             output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
             display_image = np.hstack((input_image, cv2.resize(output_image, (WIDTH, HEIGHT))))
