@@ -8,6 +8,10 @@
 ## https://github.com/IntelRealSense/librealsense/blob/master/wrappers/python/examples/python-rs400-advanced-mode-example.py
 ######################################################
 
+# Install required packages: 
+#   pip3 install pyrealsense2
+#   pip3 install opencv-python
+
 # First import the libraries
 import sys
 import pyrealsense2 as rs           # Intel RealSense cross-platform open-source API
@@ -35,7 +39,7 @@ DISPLAY_WINDOW_NAME = 'Input/output depth'
 OPTION_WINDOW_NAME  = 'Filter options'
 
 USE_PRESET_FILE = True
-PRESET_FILE  = "../cfg/d4xx-high-accuracy.json"
+PRESET_FILE  = "../cfg/d4xx-default.json"
 
 # List of filters to be applied, in this order.
 # Depth Frame                       (input)

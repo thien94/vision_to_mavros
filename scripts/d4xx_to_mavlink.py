@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-#####################################################
-##          librealsense D4xx to MAVLink           ##
-#####################################################
+######################################################
+##  librealsense D4xx to MAVLink                    ##
+######################################################
 # Requirements: 
 #   x86 based Companion Computer (for compatibility with Intel),
 #   Ubuntu 18.04 (otherwise, the following installation instruction might not work),
@@ -14,6 +14,7 @@
 #   pip3 install apscheduler
 #   pip3 install pyserial
 #   pip3 install numba
+#   pip3 install opencv-python
 # Only necessary if you installed the minimal version of Ubuntu:
 #   sudo apt install python3-opencv
 
@@ -41,7 +42,7 @@ from dronekit import connect, VehicleMode
 from pymavlink import mavutil
 from numba import njit
 
-# In order to import cv2 under python3 when you also have ROS installed
+# In order to import cv2 under python3 when you also have ROS Kinetic installed
 import os
 if os.path.exists("/opt/ros/kinetic/lib/python2.7/dist-packages"):
     sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages') 
@@ -50,8 +51,9 @@ if os.path.exists("~/anaconda3/lib/python3.7/site-packages"):
 import cv2
 
 ######################################################
-##        Depth parameters - reconfigurable         ##
+##  Depth parameters - reconfigurable               ##
 ######################################################
+
 # Sensor-specific parameter, for D435: https://www.intelrealsense.com/depth-camera-d435/
 STREAM_TYPE = [rs.stream.depth, rs.stream.color]  # rs2_stream is a types of data provided by RealSense device
 FORMAT      = [rs.format.z16, rs.format.bgr8]     # rs2_format is identifies how binary data is encoded within a frame
@@ -76,7 +78,7 @@ filters = [
 ]
 
 ######################################################
-##                    Parameters                    ##
+##  ArduPilot-related parameters - reconfigurable   ##
 ######################################################
 
 # Default configurations for connection to the FCU
@@ -84,25 +86,13 @@ connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 connection_timeout_sec_default = 5
 
+# To-do: use this to rotate all processed data
 camera_orientation_default = 0
 
 # Enable/disable each message/function individually
 enable_msg_obstacle_distance = True
 enable_msg_distance_sensor = False
 obstacle_distance_msg_hz_default = 15
-
-# Default global position for EKF home/ origin
-enable_auto_set_ekf_home = False
-home_lat = 151269321    # Somewhere random
-home_lon = 16624301     # Somewhere random
-home_alt = 163000       # Somewhere random
-
-# TODO: Taken care of by ArduPilot, so can be removed (once the handling on AP side is confirmed stable)
-# In NED frame, offset from the IMU or the center of gravity to the camera's origin point
-body_offset_enabled = 0
-body_offset_x = 0  # In meters (m)
-body_offset_y = 0  # In meters (m)
-body_offset_z = 0  # In meters (m)
 
 # lock for thread synchronization
 lock = threading.Lock()
@@ -112,9 +102,9 @@ debug_enable = True
 if debug_enable is True:
     display_name  = 'Input/output depth'
 
-#######################################
-# Global variables
-#######################################
+######################################################
+##  Global variables                                ##
+######################################################
 
 # FCU connection variables
 vehicle = None
@@ -139,10 +129,9 @@ angle_offset = 0
 increment_f  = 0
 distances = np.ones((distances_array_length,), dtype=np.uint16) * (max_depth_cm + 1)
 
-
-#######################################
-# Parsing user' inputs
-#######################################
+######################################################
+##  Parsing user' inputs                            ##
+######################################################
 
 parser = argparse.ArgumentParser(description='Reboots vehicle')
 parser.add_argument('--connect',
@@ -192,9 +181,9 @@ else:
     print("INFO: Debug messages enabled.")
 
 
-#######################################
-# Functions
-#######################################
+######################################################
+##  Functions - MAVLink                             ##
+######################################################
 
 # https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
 def send_obstacle_distance_message():
@@ -293,8 +282,9 @@ def vehicle_connect():
         return True
 
 ######################################################
-##      Functions to interface with D4xx cameras    ##
+##  Functions - D4xx cameras                        ##
 ######################################################
+
 DS5_product_ids = ["0AD1", "0AD2", "0AD3", "0AD4", "0AD5", "0AF6", "0AFE", "0AFF", "0B00", "0B01", "0B03", "0B07","0B3A"]
 
 def find_device_that_supports_advanced_mode() :
@@ -420,9 +410,9 @@ def distances_from_depth_image(depth_mat, distances, min_depth_m, max_depth_m):
         if dist_m > min_depth_m and dist_m < max_depth_m:
             distances[i] = dist_m * 100
 
-#######################################
-# Main code starts here
-#######################################
+######################################################
+##  Main code starts here                           ##
+######################################################
 
 print("INFO: Connecting to vehicle.")
 while (not vehicle_connect()):
