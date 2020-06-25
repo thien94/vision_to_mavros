@@ -97,10 +97,7 @@ obstacle_distance_msg_hz_default = 15
 # lock for thread synchronization
 lock = threading.Lock()
 
-debug_enable = True
-
-if debug_enable is True:
-    display_name  = 'Input/output depth'
+debug_enable_default = 0
 
 ######################################################
 ##  Global variables                                ##
@@ -113,8 +110,10 @@ is_vehicle_connected = False
 # Camera-related variables
 pipe = None
 depth_scale = 0
-if debug_enable is True:
-    colorizer = rs.colorizer()
+colorizer = rs.colorizer()
+
+# The name of the display window
+display_name  = 'Input/output depth'
 
 # Data variables
 data = None
@@ -140,12 +139,15 @@ parser.add_argument('--baudrate', type=float,
                     help="Vehicle connection baudrate. If not specified, a default value will be used.")
 parser.add_argument('--obstacle_distance_msg_hz', type=float,
                     help="Update frequency for OBSTACLE_DISTANCE message. If not specified, a default value will be used.")
+parser.add_argument('--debug_enable',type=float,
+                    help="Enable debugging information")
 
 args = parser.parse_args()
 
 connection_string = args.connect
 connection_baudrate = args.baudrate
 obstacle_distance_msg_hz = args.obstacle_distance_msg_hz
+debug_enable = args.debug_enable
 
 # Using default values if no specified inputs
 if not connection_string:
@@ -174,12 +176,12 @@ for i in range(len(filters)):
         print("INFO: NOT applying: ", filters[i][1])
 
 if not debug_enable:
-    debug_enable = 0
-else:
-    debug_enable = 1
-    np.set_printoptions(precision=4, suppress=True) # Format output on terminal 
-    print("INFO: Debug messages enabled.")
+    debug_enable = debug_enable_default
 
+if debug_enable == 1:
+    print("INFO: Debugging option enabled")
+else:
+    print("INFO: Debugging option DISABLED")
 
 ######################################################
 ##  Functions - MAVLink                             ##
@@ -341,7 +343,7 @@ def realsense_connect():
     # Configure depth and color streams
     config = rs.config()
     config.enable_stream(STREAM_TYPE[0], WIDTH, HEIGHT, FORMAT[0], FPS)
-    if debug_enable is True:
+    if debug_enable == 1:
         config.enable_stream(STREAM_TYPE[1], WIDTH, HEIGHT, FORMAT[1], FPS)
 
     # Start streaming with requested config
@@ -473,7 +475,7 @@ try:
         # Create obstacle distance data from depth image
         distances_from_depth_image(depth_mat, distances, DEPTH_RANGE[0], DEPTH_RANGE[1])
 
-        if debug_enable:
+        if debug_enable == 1:
             # Prepare the images
             input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
             output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
