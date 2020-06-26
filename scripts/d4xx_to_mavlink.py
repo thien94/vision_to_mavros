@@ -73,7 +73,7 @@ filters = [
     [True, "Depth to Disparity",    rs.disparity_transform(True)],
     [True, "Spatial Filter",        rs.spatial_filter()],
     [True, "Temporal Filter",       rs.temporal_filter()],
-    [True, "Hole Filling Filter",   rs.hole_filling_filter()],
+    [False, "Hole Filling Filter",   rs.hole_filling_filter()],
     [True, "Disparity to Depth",    rs.disparity_transform(False)]
 ]
 
