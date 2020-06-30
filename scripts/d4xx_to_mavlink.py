@@ -86,8 +86,8 @@ connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
 connection_timeout_sec_default = 5
 
-# To-do: use this to rotate all processed data
-camera_orientation_default = 0
+# Use this to rotate all processed data
+camera_facing_angle_degree = 0
 
 # Enable/disable each message/function individually
 enable_msg_obstacle_distance = True
@@ -372,7 +372,7 @@ def set_obstacle_distance_params():
     # For forward facing camera with a horizontal wide view:
     # HFOV=2*atan[w/(2.fx)], VFOV=2*atan[h/(2.fy)], DFOV=2*atan(Diag/2*f), Diag=sqrt(w^2 + h^2)
     HFOV = m.degrees(2 * m.atan(WIDTH / (2 * depth_intrinsics.fx)))
-    angle_offset = -(HFOV / 2) 
+    angle_offset = camera_facing_angle_degree - (HFOV / 2) 
     increment_f  =  HFOV / distances_array_length
     print("INFO: Depth camera HFOV: %0.2f degrees" % HFOV)
 
