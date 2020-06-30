@@ -57,7 +57,7 @@ enable_msg_vision_position_delta = False
 vision_position_delta_msg_hz_default = 30
 
 # https://mavlink.io/en/messages/common.html#VISION_SPEED_ESTIMATE
-enable_msg_vision_speed_estimate = False
+enable_msg_vision_speed_estimate = True
 vision_speed_estimate_msg_hz_default = 30
 
 # https://mavlink.io/en/messages/common.html#STATUSTEXT

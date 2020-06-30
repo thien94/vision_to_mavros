@@ -362,7 +362,7 @@ def realsense_configure_setting(setting_file):
 
 # Setting parameters for the OBSTACLE_DISTANCE message based on actual camera's intrinsics and user-defined params
 def set_obstacle_distance_params():
-    global angle_offset, increment_f, depth_scale
+    global angle_offset, camera_facing_angle_degree, increment_f, depth_scale
     
     # Obtain the intrinsics from the camera itself
     profiles = pipe.get_active_profile()
