@@ -1,0 +1,14 @@
+<launch>
+    <!-- This node will launch frame conversion from vision pose (tf) to mavros pose -->
+    <arg name="target_frame_id"   default="/camera_odom_frame" />
+    <param name="target_frame_id"   value="$(arg target_frame_id)" />
+
+    <arg name="source_frame_id"   default="/camera_link" />
+    <param name="source_frame_id"   value="$(arg source_frame_id)" />
+
+    <param name="output_rate"       value="30" />
+
+    <node pkg="vision_to_mavros" type="d4xx_to_mavros_node" name="d4xx_to_mavros" output="screen" >
+        <remap from="depth_rect_image" to="/d435i/depth/image_rect_raw" />
+    </node>
+</launch>
