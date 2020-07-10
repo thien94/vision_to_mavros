@@ -1,9 +1,29 @@
 <launch>
-    <!-- This node will launch frame conversion from depth image (typically from Realsense D4xx camera) to mavros OBSTACLE_DISTANCE message -->
-    <arg name="debug_enable" default="true"/>
-    <param name="debug_enable"   value="$(arg debug_enable)" />
-    
-    <node pkg="vision_to_mavros" type="d4xx_to_mavros_node" name="d4xx_to_mavros" output="screen" >
-        <remap from="depth_rect_image" to="/d435i/depth/image_rect_raw" />
+    <!-- This node will launch the ROS driver for Realsense D4xx camera -->
+    <!-- <include file="$(find realsense2_camera)/launch/rs_camera.launch"/> -->
+    <include file="$(find vision_to_mavros)/launch/realsense_t265_d4xx.launch"/>
+
+    <!-- This node will launch MAVROS -->
+    <include file="$(find mavros)/launch/apm.launch"/>
+
+    <!-- http://wiki.ros.org/depthimage_to_laserscan -->
+    <node pkg="depthimage_to_laserscan" type="depthimage_to_laserscan" name="depthimage_to_laserscan">
+        <!-- Input -->
+        <remap from="image" to="/d435/depth/image_rect_raw" />
+        <remap from="camera_info" to="/d435/depth/camera_info" />
+        <!-- Output -->
+        <!-- <remap from="scan" to="/mavros/obstacle/send" /> -->
+        <!-- Parameters -->
+        <param name="scan_height" value="10" />
+        <param name="scan_time" value="0.033" />
+        <param name="range_min" value="0.1" />
+        <param name="range_max" value="8.0" />
+        <param name="output_frame_id" value="CameraDepthFrame" />
     </node>
+
+    <!-- This node will flip -->
+    <node pkg="vision_to_mavros" type="flip_laser_scan_node" name="flip_laser_scan" output="screen" >
+        <remap from="flipped_laser_scan" to="/mavros/obstacle/send" />
+    </node>
+    
 </launch>

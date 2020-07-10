@@ -151,9 +151,9 @@ target_link_libraries(t265_fisheye_undistort_node
   ${catkin_LIBRARIES} ${OpenCV_LIBRARIES}
 )
 
-add_executable(d4xx_to_mavros_node src/d4xx_to_mavros.cpp)
-target_link_libraries(d4xx_to_mavros_node
-  ${catkin_LIBRARIES} ${OpenCV_LIBRARIES}
+add_executable(flip_laser_scan_node src/flip_laser_scan.cpp)
+target_link_libraries(flip_laser_scan_node
+  ${catkin_LIBRARIES}
 )
 
 #############
