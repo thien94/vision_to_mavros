@@ -269,12 +269,13 @@ def att_msg_callback(self, attr_name, value):
 # Establish connection to the FCU
 def vehicle_connect():
     global vehicle, is_vehicle_connected
-    
-    try:
-        vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
-    except:
-        print('Connection error! Retrying...')
-        sleep(1)
+
+    if vehicle == None:
+        try:
+            vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
+        except:
+            print('Connection error! Retrying...')
+            sleep(1)
 
     if vehicle == None:
         is_vehicle_connected = False
