@@ -427,6 +427,9 @@ def realsense_notification_callback(notif):
     print("INFO: T265 event: " + notif)
     if notif.get_category() is rs.notification_category.pose_relocalization:
         reset_counter += 1
+        if reset_counter > 255:
+            reset_counter = 1
+
         send_msg_to_gcs('Relocalization detected')
 
 def realsense_connect():
