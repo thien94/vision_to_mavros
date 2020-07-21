@@ -426,6 +426,8 @@ def realsense_notification_callback(notif):
     global reset_counter
     print("INFO: T265 event: " + notif)
     if notif.get_category() is rs.notification_category.pose_relocalization:
+        if reset_counter >= 255:
+            reset_counter = 1
         reset_counter += 1
         send_msg_to_gcs('Relocalization detected')
 
@@ -580,6 +582,8 @@ try:
                     if (position_displacement > jump_threshold):
                         send_msg_to_gcs('Pose jump detected')
                         print("Position jumped by: ", position_displacement)
+                        if reset_counter >= 255:
+                            reset_counter = 1
                         reset_counter += 1
                     
                 prev_data = data
