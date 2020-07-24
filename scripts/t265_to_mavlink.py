@@ -420,15 +420,18 @@ def vehicle_connect():
         is_vehicle_connected = True
         return True
 
+def increment_reset_counter():
+    global reset_counter
+    if reset_counter >= 255:
+        reset_counter = 1
+    reset_counter += 1
+
 # List of notification events: https://github.com/IntelRealSense/librealsense/blob/development/include/librealsense2/h/rs_types.h
 # List of notification API: https://github.com/IntelRealSense/librealsense/blob/development/common/notifications.cpp
 def realsense_notification_callback(notif):
-    global reset_counter
     print("INFO: T265 event: " + notif)
     if notif.get_category() is rs.notification_category.pose_relocalization:
-        if reset_counter >= 255:
-            reset_counter = 1
-        reset_counter += 1
+        increment_reset_counter()
         send_msg_to_gcs('Relocalization detected')
 
 def realsense_connect():
@@ -582,9 +585,7 @@ try:
                     if (position_displacement > jump_threshold):
                         send_msg_to_gcs('Pose jump detected')
                         print("Position jumped by: ", position_displacement)
-                        if reset_counter >= 255:
-                            reset_counter = 1
-                        reset_counter += 1
+                        increment_reset_counter()
                     
                 prev_data = data
 
