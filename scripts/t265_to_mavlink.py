@@ -50,19 +50,19 @@ camera_orientation_default = 0
 
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
 enable_msg_vision_position_estimate = True
-vision_position_estimate_msg_hz_default = 30
+vision_position_estimate_msg_hz_default = 30.0
 
 # https://mavlink.io/en/messages/ardupilotmega.html#VISION_POSITION_DELTA
 enable_msg_vision_position_delta = False
-vision_position_delta_msg_hz_default = 30
+vision_position_delta_msg_hz_default = 30.0
 
 # https://mavlink.io/en/messages/common.html#VISION_SPEED_ESTIMATE
 enable_msg_vision_speed_estimate = True
-vision_speed_estimate_msg_hz_default = 30
+vision_speed_estimate_msg_hz_default = 30.0
 
 # https://mavlink.io/en/messages/common.html#STATUSTEXT
 enable_update_tracking_confidence_to_gcs = True
-update_tracking_confidence_to_gcs_hz_default = 1
+update_tracking_confidence_to_gcs_hz_default = 1.0
 
 # Default global position for EKF home/ origin
 enable_auto_set_ekf_home = False
