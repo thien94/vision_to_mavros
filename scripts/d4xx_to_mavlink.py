@@ -124,8 +124,8 @@ current_time_us = 0
 min_depth_cm = int(DEPTH_RANGE[0] * 100)  # In cm
 max_depth_cm = int(DEPTH_RANGE[1] * 100)  # In cm, should be a little conservative
 distances_array_length = 72
-angle_offset = 0
-increment_f  = 0
+angle_offset = None
+increment_f  = None
 distances = np.ones((distances_array_length,), dtype=np.uint16) * (max_depth_cm + 1)
 
 ######################################################
@@ -189,8 +189,8 @@ else:
 
 # https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
 def send_obstacle_distance_message():
-    global current_time_us, distances
-    if angle_offset == 0 or increment_f == 0:
+    global current_time_us, distances, camera_facing_angle_degree
+    if angle_offset is None or increment_f is None:
         print("Please call set_obstacle_distance_params before continue")
     else:
         msg = vehicle.message_factory.obstacle_distance_encode(
@@ -208,20 +208,48 @@ def send_obstacle_distance_message():
         vehicle.send_mavlink(msg)
         vehicle.flush()
 
+        #
+        # Temporary fix to make the right-most range appear on MP's Proximity GUI
+        #
+        # Send the minimum distance of the 1/4 right-most part of the horizontal FOV to the orientation right next to the center
+        end_point = distances_array_length - 1
+        start_point = int(0.75 * end_point)
+        min_rightmost_distance = min(distances[start_point:end_point])
+        orientation = int(camera_facing_angle_degree / 45) + 1
+
+        send_single_distance_sensor_msg(min_rightmost_distance, orientation)
+
+
 # https://mavlink.io/en/messages/common.html#DISTANCE_SENSOR
-# To-do: Possible extension for individual object detection
+def send_single_distance_sensor_msg(distance, orientation):
+    # Average out a portion of the centermost part
+    msg = vehicle.message_factory.distance_sensor_encode(
+        0,                  # ms Timestamp (UNIX time or time since system boot) (ignored)
+        min_depth_cm,       # min_distance, uint16_t, cm
+        max_depth_cm,       # min_distance, uint16_t, cm
+        distance,           # current_distance,	uint16_t, cm	
+        0,	                # type : 0 (ignored)
+        0,                  # id : 0 (ignored)
+        orientation,        # orientation
+        0                   # covariance : 0 (ignored)
+    )
+
+    vehicle.send_mavlink(msg)
+    vehicle.flush()
+
+# https://mavlink.io/en/messages/common.html#DISTANCE_SENSOR
 def send_distance_sensor_message():
-    global current_time, distances
+    global distances
     # Average out a portion of the centermost part
     curr_dist = int(np.mean(distances[33:38]))
     msg = vehicle.message_factory.distance_sensor_encode(
-        0,              # us Timestamp (UNIX time or time since system boot) (ignored)
+        0,# ms Timestamp (UNIX time or time since system boot) (ignored)
         min_depth_cm,   # min_distance, uint16_t, cm
         max_depth_cm,   # min_distance, uint16_t, cm
         curr_dist,      # current_distance,	uint16_t, cm	
         0,	            # type : 0 (ignored)
         0,              # id : 0 (ignored)
-        0,              # forward
+        int(camera_facing_angle_degree / 45),              # orientation
         0               # covariance : 0 (ignored)
     )
 
@@ -361,21 +389,28 @@ def realsense_configure_setting(setting_file):
     realsense_enable_advanced_mode(advnc_mode)
     realsense_load_settings_file(advnc_mode, setting_file)
 
+
 # Setting parameters for the OBSTACLE_DISTANCE message based on actual camera's intrinsics and user-defined params
 def set_obstacle_distance_params():
     global angle_offset, camera_facing_angle_degree, increment_f, depth_scale
     
     # Obtain the intrinsics from the camera itself
     profiles = pipe.get_active_profile()
+
     depth_intrinsics = profiles.get_stream(STREAM_TYPE[0]).as_video_stream_profile().intrinsics
+
     print("INFO: Depth camera intrinsics: ", depth_intrinsics)
     
     # For forward facing camera with a horizontal wide view:
     # HFOV=2*atan[w/(2.fx)], VFOV=2*atan[h/(2.fy)], DFOV=2*atan(Diag/2*f), Diag=sqrt(w^2 + h^2)
     HFOV = m.degrees(2 * m.atan(WIDTH / (2 * depth_intrinsics.fx)))
-    angle_offset = camera_facing_angle_degree - (HFOV / 2) 
-    increment_f  =  HFOV / distances_array_length
+
+    angle_offset = camera_facing_angle_degree - (HFOV / 2)
+
+    increment_f = HFOV / distances_array_length
+
     print("INFO: Depth camera HFOV: %0.2f degrees" % HFOV)
+
 
 # Calculate the distances array by dividing the FOV (horizontal) into $distances_array_length rays,
 # then pick out the depth value at the pixel corresponding to each ray. Based on the definition of

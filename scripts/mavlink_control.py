@@ -216,13 +216,18 @@ try:
     # Take off in GUIDED_NOGPS mode.
     if sitl is not None:
         arm_and_takeoff_nogps(20)
-        # Hold the position for 3 seconds.
         print("Hold position for 3 seconds")
         set_attitude(duration = 3)
     
     while vehicle.mode.name=="GUIDED": #Stop action if we are no longer in guided mode.
+
+        print("SQUARE path using SET_POSITION_TARGET_LOCAL_NED and position parameters")
+        DURATION_SEC = 10 #Set duration for each segment.
+        HEIGHT_M = 2
+        SIZE_M  = 5
+
         """
-        Fly the vehicle in a 50m square path, using the SET_POSITION_TARGET_LOCAL_NED command 
+        Fly the vehicle in a SIZE_M meter square path, using the SET_POSITION_TARGET_LOCAL_NED command 
         and specifying a target position (rather than controlling movement using velocity vectors). 
         The command is called from goto_position_target_local_ned() (via `goto`).
 
@@ -236,11 +241,6 @@ try:
         The code also sets the region of interest (MAV_CMD_DO_SET_ROI) via the `set_roi()` method. This points the 
         camera gimbal at the the selected location (in this case it aligns the whole vehicle to point at the ROI).
         """	
-
-        print("SQUARE path using SET_POSITION_TARGET_LOCAL_NED and position parameters")
-        DURATION_SEC = 10 #Set duration for each segment.
-        HEIGHT_M = 2
-        SIZE_M  = 5
 
         print("North (m): ", SIZE_M, ", East (m): 0m, Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
         goto_position_target_local_ned(SIZE_M, 0, -HEIGHT_M)
