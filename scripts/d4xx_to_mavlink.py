@@ -57,10 +57,12 @@ import cv2
 # Sensor-specific parameter, for D435: https://www.intelrealsense.com/depth-camera-d435/
 STREAM_TYPE = [rs.stream.depth, rs.stream.color]  # rs2_stream is a types of data provided by RealSense device
 FORMAT      = [rs.format.z16, rs.format.bgr8]     # rs2_format is identifies how binary data is encoded within a frame
-WIDTH       = 640              # Defines the number of columns for each frame or zero for auto resolve
-HEIGHT      = 480              # Defines the number of lines for each frame or zero for auto resolve
-FPS         = 30               # Defines the rate of frames per second
-DEPTH_RANGE = [0.1, 8.0]       # Replace with your sensor's specifics, in meter
+WIDTH       = 640               # Defines the number of columns for each frame or zero for auto resolve
+HEIGHT      = 480               # Defines the number of lines for each frame or zero for auto resolve
+FPS         = 30                # Defines the rate of frames per second
+DEPTH_RANGE = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
+
+OBSTACLE_LINE_HEIGHT_RATIO = 0.25 # [0-1]: 0-Top, 1-Bottom. The height of the horizontal line to find distance to obstacle.
 
 USE_PRESET_FILE = True
 PRESET_FILE  = "../cfg/d4xx-default.json"
@@ -97,7 +99,7 @@ obstacle_distance_msg_hz_default = 15
 # lock for thread synchronization
 lock = threading.Lock()
 
-debug_enable_default = 0
+debug_enable_default = 1
 
 ######################################################
 ##  Global variables                                ##
@@ -192,6 +194,8 @@ def send_obstacle_distance_message():
     global current_time_us, distances, camera_facing_angle_degree
     if angle_offset is None or increment_f is None:
         print("Please call set_obstacle_distance_params before continue")
+    elif OBSTACLE_LINE_HEIGHT_RATIO < 0 or OBSTACLE_LINE_HEIGHT_RATIO > 1:
+        print("Please make sure the selected horizontal position is within [0-1]: ", OBSTACLE_LINE_HEIGHT_RATIO)
     else:
         msg = vehicle.message_factory.obstacle_distance_encode(
             current_time_us,    # us Timestamp (UNIX time or time since system boot)
@@ -216,7 +220,6 @@ def send_obstacle_distance_message():
         start_point = int(0.75 * end_point)
         min_rightmost_distance = min(distances[start_point:end_point])
         orientation = int(camera_facing_angle_degree / 45) + 1
-
         send_single_distance_sensor_msg(min_rightmost_distance, orientation)
 
 
@@ -437,7 +440,7 @@ def distances_from_depth_image(depth_mat, distances, min_depth_m, max_depth_m):
 
     for i in range(distances_array_length):
         # Converting depth from uint16_t unit to metric unit. depth_scale is usually 1mm following ROS convention.
-        dist_m = depth_mat[int(depth_img_height/2), int(i * step)] * depth_scale
+        dist_m = depth_mat[int(depth_img_height * OBSTACLE_LINE_HEIGHT_RATIO), int(i * step)] * depth_scale
 
         # Default value, unless overwritten: 
         #   A value of max_distance + 1 (cm) means no obstacle is present. 
@@ -516,6 +519,12 @@ try:
             input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
             output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
             display_image = np.hstack((input_image, cv2.resize(output_image, (WIDTH, HEIGHT))))
+
+            # Draw a horizontal line to visualize the obstacles' line
+            x1, y1 = 0,                 int(OBSTACLE_LINE_HEIGHT_RATIO * HEIGHT)
+            x2, y2 = int(WIDTH * 2),    int(OBSTACLE_LINE_HEIGHT_RATIO * HEIGHT)
+            line_thickness = 4
+            cv2.line(display_image, (x1, y1), (x2, y2), (0, 255, 0), thickness=line_thickness)
 
             # Put the fps in the corner of the image
             processing_speed = 1 / (time.time() - last_time)
