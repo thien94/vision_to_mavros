@@ -130,6 +130,9 @@ angle_offset = None
 increment_f  = None
 distances = np.ones((distances_array_length,), dtype=np.uint16) * (max_depth_cm + 1)
 
+# The vehicle's latest status and data
+vehicle_pitch_rad = None
+
 ######################################################
 ##  Parsing user' inputs                            ##
 ######################################################
@@ -287,15 +290,19 @@ def update_timesync(ts=0, tc=0):
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
-# Listen to attitude data to acquire heading when compass data is enabled
+# Listen to ATTITUDE data: https://mavlink.io/en/messages/common.html#ATTITUDE
 def att_msg_callback(self, attr_name, value):
-    global heading_north_yaw
-    if heading_north_yaw is None:
-        heading_north_yaw = value.yaw
-        print("INFO: Received first ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
-    else:
-        heading_north_yaw = value.yaw
-        print("INFO: Received ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
+    global vehicle_pitch_rad
+    vehicle_pitch_rad = value.pitch
+    if debug_enable == 1:
+        print("INFO: Received ATTITUDE msg, current pitch is %.2f" % (vehicle_pitch_rad * 180 / m.pi), "degrees")
+
+# Listen to AHRS2 data: https://mavlink.io/en/messages/ardupilotmega.html#AHRS2
+def ahrs2_msg_callback(self, attr_name, value):
+    global vehicle_pitch_rad
+    vehicle_pitch_rad = value.pitch
+    if debug_enable == 1:
+        print("INFO: Received AHRS2 msg, current pitch is %.2f" % (vehicle_pitch_rad * 180 / m.pi), "degrees")
 
 # Establish connection to the FCU
 def vehicle_connect():
@@ -483,6 +490,10 @@ else:
     vehicle.close()
     print("INFO: Realsense pipe and vehicle object closed.")
     sys.exit()
+
+# Listen and extract necessary attitude's data
+# vehicle.add_message_listener('ATTITUDE', att_msg_callback)
+vehicle.add_message_listener('AHRS2', ahrs2_msg_callback)
 
 sched.start()
 
