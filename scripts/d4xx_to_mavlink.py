@@ -108,7 +108,7 @@ debug_enable_default = 1
 # FCU connection variables
 vehicle = None
 is_vehicle_connected = False
-vehicle_pitch_deg = None
+vehicle_pitch_rad = None
 
 # Camera-related variables
 pipe = None
@@ -292,17 +292,17 @@ def update_timesync(ts=0, tc=0):
 
 # Listen to ATTITUDE data: https://mavlink.io/en/messages/common.html#ATTITUDE
 def att_msg_callback(self, attr_name, value):
-    global vehicle_pitch_deg
-    vehicle_pitch_deg = value.pitch * 180 / m.pi
+    global vehicle_pitch_rad
+    vehicle_pitch_rad = value.pitch
     if debug_enable == 1:
-        print("INFO: Received ATTITUDE msg, current pitch is %.2f" % (vehicle_pitch_deg), "degrees")
+        print("INFO: Received ATTITUDE msg, current pitch is %.2f" % m.degrees(vehicle_pitch_rad), "degrees")
 
 # Listen to AHRS2 data: https://mavlink.io/en/messages/ardupilotmega.html#AHRS2
 def ahrs2_msg_callback(self, attr_name, value):
-    global vehicle_pitch_deg
-    vehicle_pitch_deg = value.pitch * 180 / m.pi
+    global vehicle_pitch_rad
+    vehicle_pitch_rad = value.pitch
     if debug_enable == 1:
-        print("INFO: Received AHRS2 msg, current pitch is %.2f" % (vehicle_pitch_deg), "degrees")
+        print("INFO: Received AHRS2 msg, current pitch is %.2f" % m.degrees(vehicle_pitch_rad), "degrees")
 
 # Establish connection to the FCU
 def vehicle_connect():
@@ -428,14 +428,14 @@ def set_obstacle_distance_params():
 #   - Basis: depth camera's vertical FOV, user's input
 #   - Compensation: vehicle's current pitch angle
 def find_obstacle_line_height():
-    global vehicle_pitch_deg, depth_vfov_deg, DEPTH_HEIGHT
+    global vehicle_pitch_rad, depth_vfov_deg, DEPTH_HEIGHT
 
     # Basic position
     obstacle_line_height = DEPTH_HEIGHT * OBSTACLE_LINE_HEIGHT_RATIO
 
     # Compensate for the vehicle's pitch angle if data is available
-    if vehicle_pitch_deg is not None and depth_vfov_deg is not None:
-        delta_height = m.sin(m.radians(vehicle_pitch_deg) / 2) / m.sin(m.radians(depth_vfov_deg) / 2) * DEPTH_HEIGHT
+    if vehicle_pitch_rad is not None and depth_vfov_deg is not None:
+        delta_height = m.sin(vehicle_pitch_rad / 2) / m.sin(m.radians(depth_vfov_deg) / 2) * DEPTH_HEIGHT
         obstacle_line_height += delta_height
 
     # Sanity check
