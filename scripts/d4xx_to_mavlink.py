@@ -62,7 +62,8 @@ DEPTH_HEIGHT= 480               # Defines the number of lines for each frame or 
 FPS         = 30                # Defines the rate of frames per second
 DEPTH_RANGE = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
 
-OBSTACLE_LINE_HEIGHT_RATIO = 0.25 # [0-1]: 0-Top, 1-Bottom. The height of the horizontal line to find distance to obstacle.
+obstacle_line_height_ratio = 0.25  # [0-1]: 0-Top, 1-Bottom. The height of the horizontal line to find distance to obstacle.
+obstacle_line_thickness_pixel = 10 # [1-DEPTH_HEIGHT]: Number of pixel rows to use to generate the obstacle distance message. For each column, the scan will return the minimum value for those pixels centered vertically in the image.
 
 USE_PRESET_FILE = True
 PRESET_FILE  = "../cfg/d4xx-default.json"
@@ -99,7 +100,7 @@ obstacle_distance_msg_hz_default = 15
 # lock for thread synchronization
 lock = threading.Lock()
 
-debug_enable_default = 0
+debug_enable_default = 1
 
 ######################################################
 ##  Global variables                                ##
@@ -198,8 +199,6 @@ def send_obstacle_distance_message():
     global current_time_us, distances, camera_facing_angle_degree
     if angle_offset is None or increment_f is None:
         print("Please call set_obstacle_distance_params before continue")
-    elif OBSTACLE_LINE_HEIGHT_RATIO < 0 or OBSTACLE_LINE_HEIGHT_RATIO > 1:
-        print("Please make sure the selected horizontal position is within [0-1]: ", OBSTACLE_LINE_HEIGHT_RATIO)
     else:
         msg = vehicle.message_factory.obstacle_distance_encode(
             current_time_us,    # us Timestamp (UNIX time or time since system boot)
@@ -401,7 +400,7 @@ def realsense_configure_setting(setting_file):
 
 # Setting parameters for the OBSTACLE_DISTANCE message based on actual camera's intrinsics and user-defined params
 def set_obstacle_distance_params():
-    global angle_offset, camera_facing_angle_degree, increment_f, depth_scale, depth_hfov_deg, depth_vfov_deg
+    global angle_offset, camera_facing_angle_degree, increment_f, depth_scale, depth_hfov_deg, depth_vfov_deg, obstacle_line_height_ratio, obstacle_line_thickness_pixel
     
     # Obtain the intrinsics from the camera itself
     profiles = pipe.get_active_profile()
@@ -424,6 +423,15 @@ def set_obstacle_distance_params():
     print("INFO: OBSTACLE_DISTANCE increment_f: %0.3f" % increment_f)
     print("INFO: OBSTACLE_DISTANCE coverage: from %0.3f" % (angle_offset), "to %0.3f degrees" % (angle_offset + increment_f * distances_array_length))
 
+    # Sanity check for depth configuration
+    if obstacle_line_height_ratio < 0 or obstacle_line_height_ratio > 1:
+        print("Please make sure the horizontal position is within [0-1]: ", obstacle_line_height_ratio)
+        sys.exit()
+
+    if obstacle_line_thickness_pixel < 1 or obstacle_line_thickness_pixel > DEPTH_HEIGHT:
+        print("Please make sure the thickness is within [0-DEPTH_HEIGHT]: ", obstacle_line_thickness_pixel)
+        sys.exit()
+
 # Find the height of the horizontal line to calculate the obstacle distances
 #   - Basis: depth camera's vertical FOV, user's input
 #   - Compensation: vehicle's current pitch angle
@@ -431,7 +439,7 @@ def find_obstacle_line_height():
     global vehicle_pitch_rad, depth_vfov_deg, DEPTH_HEIGHT
 
     # Basic position
-    obstacle_line_height = DEPTH_HEIGHT * OBSTACLE_LINE_HEIGHT_RATIO
+    obstacle_line_height = DEPTH_HEIGHT * obstacle_line_height_ratio
 
     # Compensate for the vehicle's pitch angle if data is available
     if vehicle_pitch_rad is not None and depth_vfov_deg is not None:
@@ -464,7 +472,7 @@ def find_obstacle_line_height():
 # Note that we assume the input depth_mat is already processed by at least hole-filling filter.
 # Otherwise, the output array might not be stable from frame to frame.
 @njit
-def distances_from_depth_image(obstacle_line_height, depth_mat, distances, min_depth_m, max_depth_m):
+def distances_from_depth_image(obstacle_line_height, depth_mat, distances, min_depth_m, max_depth_m, obstacle_line_thickness_pixel):
     # Parameters for depth image
     depth_img_width  = depth_mat.shape[1]
     depth_img_height = depth_mat.shape[0]
@@ -473,8 +481,31 @@ def distances_from_depth_image(obstacle_line_height, depth_mat, distances, min_d
     step = depth_img_width / distances_array_length
 
     for i in range(distances_array_length):
+        # Each range (left to right) is found from a set of rows within a column
+        #  [ ] -> ignored
+        #  [x] -> center + obstacle_line_thickness_pixel / 2
+        #  [x] -> center = obstacle_line_height (moving up and down according to the vehicle's pitch angle)
+        #  [x] -> center - obstacle_line_thickness_pixel / 2
+        #  [ ] -> ignored
+        #   ^ One of [distances_array_length] number of columns, from left to right in the image
+        center_pixel = obstacle_line_height
+        upper_pixel = center_pixel + obstacle_line_thickness_pixel / 2
+        lower_pixel = center_pixel - obstacle_line_thickness_pixel / 2
+
+        # Sanity checks
+        if upper_pixel > depth_img_height:
+            upper_pixel = depth_img_height
+        elif upper_pixel < 1:
+            upper_pixel = 1
+        if lower_pixel > depth_img_height:
+            lower_pixel = depth_img_height - 1
+        elif lower_pixel < 0:
+            lower_pixel = 0
+
         # Converting depth from uint16_t unit to metric unit. depth_scale is usually 1mm following ROS convention.
-        dist_m = depth_mat[int(obstacle_line_height), int(i * step)] * depth_scale
+        # dist_m = depth_mat[int(obstacle_line_height), int(i * step)] * depth_scale
+        min_point_in_scan = min(depth_mat[int(lower_pixel):int(upper_pixel), int(i * step)])
+        dist_m = min_point_in_scan * depth_scale
 
         # Default value, unless overwritten: 
         #   A value of max_distance + 1 (cm) means no obstacle is present. 
@@ -551,7 +582,7 @@ try:
 
         # Create obstacle distance data from depth image
         obstacle_line_height = find_obstacle_line_height()
-        distances_from_depth_image(obstacle_line_height, depth_mat, distances, DEPTH_RANGE[0], DEPTH_RANGE[1])
+        distances_from_depth_image(obstacle_line_height, depth_mat, distances, DEPTH_RANGE[0], DEPTH_RANGE[1], obstacle_line_thickness_pixel)
 
         if debug_enable == 1:
             # Prepare the data
@@ -562,7 +593,7 @@ try:
             # Draw a horizontal line to visualize the obstacles' line
             x1, y1 = 0,                     int(obstacle_line_height)
             x2, y2 = int(DEPTH_WIDTH * 2),  int(obstacle_line_height)
-            line_thickness = 4
+            line_thickness = obstacle_line_thickness_pixel
             cv2.line(display_image, (x1, y1), (x2, y2), (0, 255, 0), thickness=line_thickness)
 
             # Put the fps in the corner of the image
