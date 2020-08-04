@@ -62,7 +62,7 @@ DEPTH_HEIGHT= 480               # Defines the number of lines for each frame or 
 FPS         = 30                # Defines the rate of frames per second
 DEPTH_RANGE = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
 
-OBSTACLE_LINE_HEIGHT_RATIO = 0.65 # [0-1]: 0-Top, 1-Bottom. The height of the horizontal line to find distance to obstacle.
+OBSTACLE_LINE_HEIGHT_RATIO = 0.25 # [0-1]: 0-Top, 1-Bottom. The height of the horizontal line to find distance to obstacle.
 
 USE_PRESET_FILE = True
 PRESET_FILE  = "../cfg/d4xx-default.json"
@@ -99,7 +99,7 @@ obstacle_distance_msg_hz_default = 15
 # lock for thread synchronization
 lock = threading.Lock()
 
-debug_enable_default = 1
+debug_enable_default = 0
 
 ######################################################
 ##  Global variables                                ##
@@ -519,8 +519,8 @@ else:
     sys.exit()
 
 # Listen and extract necessary attitude's data
-# vehicle.add_message_listener('ATTITUDE', att_msg_callback)
-vehicle.add_message_listener('AHRS2', ahrs2_msg_callback)
+vehicle.add_message_listener('ATTITUDE', att_msg_callback)
+# vehicle.add_message_listener('AHRS2', ahrs2_msg_callback)
 
 sched.start()
 
