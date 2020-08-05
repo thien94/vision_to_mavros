@@ -77,6 +77,7 @@ def RC_CHANNEL_listener(vehicle, name, message):
     #     print("Number of RC channels: ", message.chancount, ". Individual RC channel value:")
     #     print(" CH", channel, curr_channels_values[channel])
 
+
 def arm_and_takeoff_nogps(aTargetAltitude):
     """
     Arms vehicle and fly to aTargetAltitude without GPS data.
@@ -93,7 +94,7 @@ def arm_and_takeoff_nogps(aTargetAltitude):
 
     print("Arming motors")
     # Copter should arm in GUIDED_NOGPS mode
-    vehicle.mode = VehicleMode("GUIDED_NOGPS")
+    vehicle.mode = VehicleMode("LOITER")
     vehicle.armed = True
     while not vehicle.armed:
         print("- Waiting for arming...")
@@ -112,6 +113,7 @@ def arm_and_takeoff_nogps(aTargetAltitude):
             print("Reached target altitude")
             break
         time.sleep(1)
+
 
 def send_attitude_target(roll_angle = 0.0, pitch_angle = 0.0,
                          yaw_angle = None, yaw_rate = 0.0, use_yaw_rate = False,
@@ -142,6 +144,28 @@ def send_attitude_target(roll_angle = 0.0, pitch_angle = 0.0,
     )
     vehicle.send_mavlink(msg)
 
+
+def send_ned_velocity(velocity_x, velocity_y, velocity_z, duration):
+    """
+    Move vehicle in direction based on specified velocity vectors.
+    """
+    msg = vehicle.message_factory.set_position_target_local_ned_encode(
+        0,       # time_boot_ms (not used)
+        0, 0,    # target system, target component
+        mavutil.mavlink.MAV_FRAME_LOCAL_NED, # frame
+        0b0000111111000111, # type_mask (only speeds enabled)
+        0, 0, 0, # x, y, z positions (not used)
+        velocity_x, velocity_y, velocity_z, # x, y, z velocity in m/s
+        0, 0, 0, # x, y, z acceleration (not supported yet, ignored in GCS_Mavlink)
+        0, 0)    # yaw, yaw_rate (not supported yet, ignored in GCS_Mavlink)
+
+
+    # send command to vehicle on 1 Hz cycle
+    for x in range(0,duration):
+        vehicle.send_mavlink(msg)
+        time.sleep(1)
+
+
 def goto_position_target_local_ned(north, east, down):
     """
     Send SET_POSITION_TARGET_LOCAL_NED command to request the vehicle fly to a specified
@@ -158,6 +182,7 @@ def goto_position_target_local_ned(north, east, down):
         0, 0)    # yaw, yaw_rate (not supported yet, ignored in GCS_Mavlink)
     # send command to vehicle
     vehicle.send_mavlink(msg)
+
 
 def set_attitude(roll_angle = 0.0, pitch_angle = 0.0,
                  yaw_angle = None, yaw_rate = 0.0, use_yaw_rate = False,
@@ -183,6 +208,7 @@ def set_attitude(roll_angle = 0.0, pitch_angle = 0.0,
                          0, 0, True,
                          thrust)
 
+
 def to_quaternion(roll = 0.0, pitch = 0.0, yaw = 0.0):
     """
     Convert degrees to quaternions
@@ -201,6 +227,137 @@ def to_quaternion(roll = 0.0, pitch = 0.0, yaw = 0.0):
 
     return [w, x, y, z]
 
+
+"""
+Convenience functions for sending immediate/guided mode commands to control the Copter.
+The set of commands demonstrated here include:
+* MAV_CMD_CONDITION_YAW - set direction of the front of the Copter (latitude, longitude)
+* MAV_CMD_DO_SET_ROI - set direction where the camera gimbal is aimed (latitude, longitude, altitude)
+* MAV_CMD_DO_CHANGE_SPEED - set target speed in metres/second.
+The full set of available commands are listed here:
+http://dev.ardupilot.com/wiki/copter-commands-in-guided-mode/
+"""
+
+def condition_yaw(heading, relative=False):
+    """
+    Send MAV_CMD_CONDITION_YAW message to point vehicle at a specified heading (in degrees).
+    This method sets an absolute heading by default, but you can set the `relative` parameter
+    to `True` to set yaw relative to the current yaw heading.
+    By default the yaw of the vehicle will follow the direction of travel. After setting 
+    the yaw using this function there is no way to return to the default yaw "follow direction 
+    of travel" behaviour (https://github.com/diydrones/ardupilot/issues/2427)
+    For more information see: 
+    http://copter.ardupilot.com/wiki/common-mavlink-mission-command-messages-mav_cmd/#mav_cmd_condition_yaw
+    """
+    if relative:
+        is_relative = 1 #yaw relative to direction of travel
+    else:
+        is_relative = 0 #yaw is an absolute angle
+    # create the CONDITION_YAW command using command_long_encode()
+    msg = vehicle.message_factory.command_long_encode(
+        0, 0,    # target system, target component
+        mavutil.mavlink.MAV_CMD_CONDITION_YAW, #command
+        0, #confirmation
+        heading,    # param 1, yaw in degrees
+        0,          # param 2, yaw speed deg/s
+        1,          # param 3, direction -1 ccw, 1 cw
+        is_relative, # param 4, relative offset 1, absolute angle 0
+        0, 0, 0)    # param 5 ~ 7 not used
+    # send command to vehicle
+    vehicle.send_mavlink(msg)
+
+
+def move_square_position_based():
+
+    print("SQUARE path using SET_POSITION_TARGET_LOCAL_NED and position parameters")
+    DURATION_SEC = 10 #Set duration for each segment.
+    HEIGHT_M = 2
+    SIZE_M  = 5
+
+    """
+    Fly the vehicle in a SIZE_M meter square path, using the SET_POSITION_TARGET_LOCAL_NED command 
+    and specifying a target position (rather than controlling movement using velocity vectors). 
+    The command is called from goto_position_target_local_ned() (via `goto`).
+
+    The position is specified in terms of the NED (North East Down) relative to the Home location.
+
+    WARNING: The "D" in NED means "Down". Using a positive D value will drive the vehicle into the ground!
+
+    The code sleeps for a time (DURATION_SEC) to give the vehicle time to reach each position (rather than 
+    sending commands based on proximity).
+
+    The code also sets the region of interest (MAV_CMD_DO_SET_ROI) via the `set_roi()` method. This points the 
+    camera gimbal at the the selected location (in this case it aligns the whole vehicle to point at the ROI).
+    """	
+
+    print("North (m): ", SIZE_M, ", East (m): 0m, Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
+    goto_position_target_local_ned(SIZE_M, 0, -HEIGHT_M)
+    time.sleep(DURATION_SEC)
+
+    print("North (m): ", SIZE_M, ", East (m): ", SIZE_M, " Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
+    goto_position_target_local_ned(SIZE_M, SIZE_M, -HEIGHT_M)
+    time.sleep(DURATION_SEC)
+
+    print("North (m): 0m, East (m): 0m ", SIZE_M, ", Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
+    goto_position_target_local_ned(0, SIZE_M, -HEIGHT_M)
+    time.sleep(DURATION_SEC)
+
+    print("North (m): 0m, East (m): 0m, Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
+    goto_position_target_local_ned(0, 0, -HEIGHT_M)
+    time.sleep(DURATION_SEC)
+
+
+def move_square_velocity_based():
+    """
+    Fly the vehicle in a SQUARE path using velocity vectors (the underlying code calls the 
+    SET_POSITION_TARGET_LOCAL_NED command with the velocity parameters enabled).
+    The thread sleeps for a time (DURATION) which defines the distance that will be travelled.
+    The code also sets the yaw (MAV_CMD_CONDITION_YAW) using the `set_yaw()` method in each segment
+    so that the front of the vehicle points in the direction of travel
+    """
+    #Set up velocity vector to map to each direction.
+    # vx > 0 => fly North
+    # vx < 0 => fly South
+    NORTH = 2
+    SOUTH = -2
+
+    # Note for vy:
+    # vy > 0 => fly East
+    # vy < 0 => fly West
+    EAST = 2
+    WEST = -2
+
+    # Note for vz: 
+    # vz < 0 => ascend
+    # vz > 0 => descend
+    UP = -0.5
+    DOWN = 0.5
+
+    DURATION_SEC = 10 #Set duration for each segment.
+
+    # Square path using velocity
+    print("SQUARE path using SET_POSITION_TARGET_LOCAL_NED and velocity parameters")
+
+    print("Yaw 0 absolute (North)")
+    condition_yaw(0)
+
+    print("Velocity South")
+    send_ned_velocity(SOUTH, 0, 0,DURATION_SEC)
+    send_ned_velocity(0, 0, 0, 1)
+
+    # print("Velocity West")
+    # send_ned_velocity(0,WEST,0,DURATION_SEC)
+    # send_ned_velocity(0,0,0,1)
+
+    print("Velocity North")
+    send_ned_velocity(NORTH, 0, 0, DURATION_SEC)
+    send_ned_velocity(0, 0, 0, 1)
+
+    # print("Velocity East")
+    # send_ned_velocity(0,EAST,0,DURATION_SEC)
+    # send_ned_velocity(0,0,0,1)
+
+
 #######################################
 # Main program starts here
 #######################################
@@ -213,52 +370,20 @@ try:
             time.sleep(1)
     print("Starting autonomous control...")
 
-    # Take off in GUIDED_NOGPS mode.
+    # If using SITL: Take off in GUIDED_NOGPS mode.
     if sitl is not None:
         arm_and_takeoff_nogps(20)
         print("Hold position for 3 seconds")
         set_attitude(duration = 3)
     
-    while vehicle.mode.name=="GUIDED": #Stop action if we are no longer in guided mode.
-
-        print("SQUARE path using SET_POSITION_TARGET_LOCAL_NED and position parameters")
-        DURATION_SEC = 10 #Set duration for each segment.
-        HEIGHT_M = 2
-        SIZE_M  = 5
-
-        """
-        Fly the vehicle in a SIZE_M meter square path, using the SET_POSITION_TARGET_LOCAL_NED command 
-        and specifying a target position (rather than controlling movement using velocity vectors). 
-        The command is called from goto_position_target_local_ned() (via `goto`).
-
-        The position is specified in terms of the NED (North East Down) relative to the Home location.
-
-        WARNING: The "D" in NED means "Down". Using a positive D value will drive the vehicle into the ground!
-
-        The code sleeps for a time (DURATION_SEC) to give the vehicle time to reach each position (rather than 
-        sending commands based on proximity).
-
-        The code also sets the region of interest (MAV_CMD_DO_SET_ROI) via the `set_roi()` method. This points the 
-        camera gimbal at the the selected location (in this case it aligns the whole vehicle to point at the ROI).
-        """	
-
-        print("North (m): ", SIZE_M, ", East (m): 0m, Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
-        goto_position_target_local_ned(SIZE_M, 0, -HEIGHT_M)
-        time.sleep(DURATION_SEC)
-
-        print("North (m): ", SIZE_M, ", East (m): ", SIZE_M, " Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
-        goto_position_target_local_ned(SIZE_M, SIZE_M, -HEIGHT_M)
-        time.sleep(DURATION_SEC)
-
-        print("North (m): 0m, East (m): 0m ", SIZE_M, ", Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
-        goto_position_target_local_ned(0, SIZE_M, -HEIGHT_M)
-        time.sleep(DURATION_SEC)
-
-        print("North (m): 0m, East (m): 0m, Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
-        goto_position_target_local_ned(0, 0, -HEIGHT_M)
-        time.sleep(DURATION_SEC)
-
-
+    # Perform certain actions until we are no longer in guided mode.
+    control_type = "Velocity" # "Position", "Velocity", depends on the actual flight mode
+    while vehicle.mode.name == "GUIDED":
+        if control_type is "Position":
+            move_square_position_based()
+        elif control_type is "Velocity":
+            move_square_velocity_based()
+            
     print("Setting LAND mode...")
     vehicle.mode = VehicleMode("LAND")
     time.sleep(1)
