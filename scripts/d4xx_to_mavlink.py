@@ -100,7 +100,7 @@ obstacle_distance_msg_hz_default = 15
 # lock for thread synchronization
 lock = threading.Lock()
 
-debug_enable_default = 1
+debug_enable_default = 0
 
 ######################################################
 ##  Global variables                                ##

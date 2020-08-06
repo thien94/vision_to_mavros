@@ -307,9 +307,9 @@ def move_square_position_based():
     time.sleep(DURATION_SEC)
 
 
-def move_square_velocity_based():
+def move_forward_backward_velocity_based():
     """
-    Fly the vehicle in a SQUARE path using velocity vectors (the underlying code calls the 
+    Fly the vehicle in a path using velocity vectors (the underlying code calls the 
     SET_POSITION_TARGET_LOCAL_NED command with the velocity parameters enabled).
     The thread sleeps for a time (DURATION) which defines the distance that will be travelled.
     The code also sets the yaw (MAV_CMD_CONDITION_YAW) using the `set_yaw()` method in each segment
@@ -318,14 +318,8 @@ def move_square_velocity_based():
     #Set up velocity vector to map to each direction.
     # vx > 0 => fly North
     # vx < 0 => fly South
-    NORTH = 2
-    SOUTH = -2
-
-    # Note for vy:
-    # vy > 0 => fly East
-    # vy < 0 => fly West
-    EAST = 2
-    WEST = -2
+    NORTH = 0.5
+    SOUTH = -0.5
 
     # Note for vz: 
     # vz < 0 => ascend
@@ -333,10 +327,10 @@ def move_square_velocity_based():
     UP = -0.5
     DOWN = 0.5
 
-    DURATION_SEC = 10 #Set duration for each segment.
+    DURATION_SEC = 4 #Set duration for each segment.
 
-    # Square path using velocity
-    print("SQUARE path using SET_POSITION_TARGET_LOCAL_NED and velocity parameters")
+    # Control path using velocity
+    print("Forward/backward path using SET_POSITION_TARGET_LOCAL_NED and velocity parameters")
 
     print("Yaw 0 absolute (North)")
     condition_yaw(0)
@@ -345,17 +339,9 @@ def move_square_velocity_based():
     send_ned_velocity(SOUTH, 0, 0,DURATION_SEC)
     send_ned_velocity(0, 0, 0, 1)
 
-    # print("Velocity West")
-    # send_ned_velocity(0,WEST,0,DURATION_SEC)
-    # send_ned_velocity(0,0,0,1)
-
     print("Velocity North")
     send_ned_velocity(NORTH, 0, 0, DURATION_SEC)
     send_ned_velocity(0, 0, 0, 1)
-
-    # print("Velocity East")
-    # send_ned_velocity(0,EAST,0,DURATION_SEC)
-    # send_ned_velocity(0,0,0,1)
 
 
 #######################################
@@ -378,15 +364,17 @@ try:
     
     # Perform certain actions until we are no longer in guided mode.
     control_type = "Velocity" # "Position", "Velocity", depends on the actual flight mode
-    while vehicle.mode.name == "GUIDED":
-        if control_type is "Position":
-            move_square_position_based()
-        elif control_type is "Velocity":
-            move_square_velocity_based()
+
+    while True:
+        if vehicle.mode.name == "GUIDED":
+            if control_type is "Position":
+                move_square_position_based()
+            elif control_type is "Velocity":
+                move_forward_backward_velocity_based()
             
-    print("Setting LAND mode...")
-    vehicle.mode = VehicleMode("LAND")
-    time.sleep(1)
+    # print("Setting LAND mode...")
+    # vehicle.mode = VehicleMode("LAND")
+    # time.sleep(1)
 
     # Close vehicle object before exiting script
     print("Close vehicle object")
