@@ -270,7 +270,7 @@ def condition_yaw(heading, relative=False):
 def move_square_position_based():
 
     print("SQUARE path using SET_POSITION_TARGET_LOCAL_NED and position parameters")
-    DURATION_SEC = 5 #Set duration for each segment.
+    DURATION_SEC = 2 #Set duration for each segment.
     HEIGHT_M = 2
     SIZE_M  = 2
 
@@ -360,9 +360,7 @@ try:
     # Wait until the RC channel is turned on and the corresponding channel is switch
     print("Starting autonomous control...")
     while True:
-        if vehicle.mode.name == "GUIDED" and rc_channel_value > rc_control_thres:
-            move_forward_backward_velocity_based()
-        elif vehicle.mode.name == "LOITER" and rc_channel_value > rc_control_thres:
+        if vehicle.mode.name == "LOITER" and rc_channel_value > rc_control_thres:
             move_square_position_based()
         else:
             print("Checking rc channel:", rc_control_channel, ", current value:", rc_channel_value, ", threshold to start: ", rc_control_thres)
