@@ -349,28 +349,22 @@ def move_forward_backward_velocity_based():
 #######################################
 
 try:
-    # Wait until the RC channel is turned on and the corresponding channel is switch
-    if sitl is None:
-        while rc_channel_value < rc_control_thres:
-            print("Checking rc channel:", rc_control_channel, ", current value:", rc_channel_value, ", threshold to start: ", rc_control_thres)
-            time.sleep(1)
-    print("Starting autonomous control...")
-
     # If using SITL: Take off in GUIDED_NOGPS mode.
     if sitl is not None:
         arm_and_takeoff_nogps(20)
         print("Hold position for 3 seconds")
         set_attitude(duration = 3)
     
-    # Perform certain actions until we are no longer in guided mode.
-    control_type = "Velocity" # "Position", "Velocity", depends on the actual flight mode
-
+    # Wait until the RC channel is turned on and the corresponding channel is switch
+    print("Starting autonomous control...")
     while True:
-        if vehicle.mode.name == "GUIDED":
-            if control_type is "Position":
-                move_square_position_based()
-            elif control_type is "Velocity":
-                move_forward_backward_velocity_based()
+        if vehicle.mode.name is "GUIDED" and rc_channel_value < rc_control_thres:
+            move_forward_backward_velocity_based()
+        elif vehicle.mode.name is "LOITER" and rc_channel_value < rc_control_thres:
+            move_square_position_based()
+        else:
+            print("Checking rc channel:", rc_control_channel, ", current value:", rc_channel_value, ", threshold to start: ", rc_control_thres)
+            time.sleep(1)
             
     # print("Setting LAND mode...")
     # vehicle.mode = VehicleMode("LAND")
