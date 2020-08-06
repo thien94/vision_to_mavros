@@ -270,9 +270,9 @@ def condition_yaw(heading, relative=False):
 def move_square_position_based():
 
     print("SQUARE path using SET_POSITION_TARGET_LOCAL_NED and position parameters")
-    DURATION_SEC = 10 #Set duration for each segment.
+    DURATION_SEC = 5 #Set duration for each segment.
     HEIGHT_M = 2
-    SIZE_M  = 5
+    SIZE_M  = 2
 
     """
     Fly the vehicle in a SIZE_M meter square path, using the SET_POSITION_TARGET_LOCAL_NED command 
@@ -318,7 +318,7 @@ def move_forward_backward_velocity_based():
     #Set up velocity vector to map to each direction.
     # vx > 0 => fly North
     # vx < 0 => fly South
-    NORTH = 0.5
+    NORTH = 1.0
     SOUTH = -0.5
 
     # Note for vz: 
@@ -326,8 +326,10 @@ def move_forward_backward_velocity_based():
     # vz > 0 => descend
     UP = -0.5
     DOWN = 0.5
-
-    DURATION_SEC = 4 #Set duration for each segment.
+    
+    # Set duration for each segment.
+    DURATION_FORWARD_SEC = 4
+    DURATION_BACKWARD_SEC = 2
 
     # Control path using velocity
     print("Forward/backward path using SET_POSITION_TARGET_LOCAL_NED and velocity parameters")
@@ -335,12 +337,12 @@ def move_forward_backward_velocity_based():
     print("Yaw 0 absolute (North)")
     condition_yaw(0)
 
-    print("Velocity South")
-    send_ned_velocity(SOUTH, 0, 0,DURATION_SEC)
+    print("Velocity North")
+    send_ned_velocity(NORTH, 0, 0, DURATION_FORWARD_SEC)
     send_ned_velocity(0, 0, 0, 1)
 
-    print("Velocity North")
-    send_ned_velocity(NORTH, 0, 0, DURATION_SEC)
+    print("Velocity South")
+    send_ned_velocity(SOUTH, 0, 0,DURATION_BACKWARD_SEC)
     send_ned_velocity(0, 0, 0, 1)
 
 
