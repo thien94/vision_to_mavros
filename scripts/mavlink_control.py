@@ -360,9 +360,9 @@ try:
     # Wait until the RC channel is turned on and the corresponding channel is switch
     print("Starting autonomous control...")
     while True:
-        if vehicle.mode.name == "GUIDED" and rc_channel_value < rc_control_thres:
+        if vehicle.mode.name == "GUIDED" and rc_channel_value > rc_control_thres:
             move_forward_backward_velocity_based()
-        elif vehicle.mode.name == "LOITER" and rc_channel_value < rc_control_thres:
+        elif vehicle.mode.name == "LOITER" and rc_channel_value > rc_control_thres:
             move_square_position_based()
         else:
             print("Checking rc channel:", rc_control_channel, ", current value:", rc_channel_value, ", threshold to start: ", rc_control_thres)
