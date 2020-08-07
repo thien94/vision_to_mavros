@@ -267,7 +267,7 @@ def condition_yaw(heading, relative=False):
     vehicle.send_mavlink(msg)
 
 
-def move_square_position_based():
+def pos_control_align_north_and_move_square():
 
     print("SQUARE path using SET_POSITION_TARGET_LOCAL_NED and position parameters")
     DURATION_SEC = 2 #Set duration for each segment.
@@ -289,6 +289,9 @@ def move_square_position_based():
     The code also sets the region of interest (MAV_CMD_DO_SET_ROI) via the `set_roi()` method. This points the 
     camera gimbal at the the selected location (in this case it aligns the whole vehicle to point at the ROI).
     """	
+    
+    print("Yaw 0 absolute (North)")
+    condition_yaw(0)
 
     print("North (m): ", SIZE_M, ", East (m): 0m, Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
     goto_position_target_local_ned(SIZE_M, 0, -HEIGHT_M)
@@ -307,7 +310,7 @@ def move_square_position_based():
     time.sleep(DURATION_SEC)
 
 
-def move_forward_backward_velocity_based():
+def vel_control_align_north_and_move_forward_backward():
     """
     Fly the vehicle in a path using velocity vectors (the underlying code calls the 
     SET_POSITION_TARGET_LOCAL_NED command with the velocity parameters enabled).
@@ -361,7 +364,9 @@ try:
     print("Starting autonomous control...")
     while True:
         if vehicle.mode.name == "LOITER" and rc_channel_value > rc_control_thres:
-            move_square_position_based()
+            pos_control_align_north_and_move_square()
+        elif vehicle.mode.name == "GUIDED" and rc_channel_value > rc_control_thres:
+            vel_control_align_north_and_move_forward_backward()
         else:
             print("Checking rc channel:", rc_control_channel, ", current value:", rc_channel_value, ", threshold to start: ", rc_control_thres)
             time.sleep(1)
