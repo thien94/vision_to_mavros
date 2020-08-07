@@ -60,7 +60,7 @@ FORMAT      = [rs.format.z16, rs.format.bgr8]     # rs2_format is identifies how
 DEPTH_WIDTH = 640               # Defines the number of columns for each frame or zero for auto resolve
 DEPTH_HEIGHT= 480               # Defines the number of lines for each frame or zero for auto resolve
 FPS         = 30                # Defines the rate of frames per second
-DEPTH_RANGE = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
+DEPTH_RANGE_M = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
 
 obstacle_line_height_ratio = 0.25  # [0-1]: 0-Top, 1-Bottom. The height of the horizontal line to find distance to obstacle.
 obstacle_line_thickness_pixel = 10 # [1-DEPTH_HEIGHT]: Number of pixel rows to use to generate the obstacle distance message. For each column, the scan will return the minimum value for those pixels centered vertically in the image.
@@ -89,8 +89,8 @@ filters = [
 # decimation_magnitude = 8
 # filters[0][2].set_option(rs.option.filter_magnitude, decimation_magnitude)
 
-threshold_min_m = 0.15
-threshold_max_m = 10.0
+threshold_min_m = DEPTH_RANGE_M[0]
+threshold_max_m = DEPTH_RANGE_M[1]
 if filters[1][0] is True:
     filters[1][2].set_option(rs.option.min_distance, threshold_min_m)
     filters[1][2].set_option(rs.option.max_distance, threshold_max_m)
@@ -142,8 +142,8 @@ current_time_us = 0
 
 # Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
 # See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
-min_depth_cm = int(DEPTH_RANGE[0] * 100)  # In cm
-max_depth_cm = int(DEPTH_RANGE[1] * 100)  # In cm, should be a little conservative
+min_depth_cm = int(DEPTH_RANGE_M[0] * 100)  # In cm
+max_depth_cm = int(DEPTH_RANGE_M[1] * 100)  # In cm, should be a little conservative
 distances_array_length = 72
 angle_offset = None
 increment_f  = None
@@ -597,7 +597,7 @@ try:
 
         # Create obstacle distance data from depth image
         obstacle_line_height = find_obstacle_line_height()
-        distances_from_depth_image(obstacle_line_height, depth_mat, distances, DEPTH_RANGE[0], DEPTH_RANGE[1], obstacle_line_thickness_pixel)
+        distances_from_depth_image(obstacle_line_height, depth_mat, distances, DEPTH_RANGE_M[0], DEPTH_RANGE_M[1], obstacle_line_thickness_pixel)
 
         if debug_enable == 1:
             # Prepare the data
