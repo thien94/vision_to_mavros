@@ -81,16 +81,19 @@ filters = [
     [True, "Disparity to Depth",    rs.disparity_transform(False)]
 ]
 
-## Applying values to the filters here
-## The filters can be tuned with opencv_depth_filtering.py script, and save the default values to here
+#
+# The filters can be tuned with opencv_depth_filtering.py script, and save the default values to here
+# Individual filters have different options so one have to apply the values accordingly
+#
 
 # decimation_magnitude = 8
 # filters[0][2].set_option(rs.option.filter_magnitude, decimation_magnitude)
 
 threshold_min_m = 0.15
 threshold_max_m = 10.0
-filters[1][2].set_option(rs.option.min_distance, threshold_min_m)
-filters[1][2].set_option(rs.option.max_distance, threshold_max_m)
+if filters[1][0] is True:
+    filters[1][2].set_option(rs.option.min_distance, threshold_min_m)
+    filters[1][2].set_option(rs.option.max_distance, threshold_max_m)
 
 ######################################################
 ##  ArduPilot-related parameters - reconfigurable   ##
