@@ -322,13 +322,13 @@ def vel_control_align_and_move_square():
     # vx > 0 => fly North
     # vx < 0 => fly South
     NORTH = 1.0
-    SOUTH = -0.5
+    SOUTH = -1.0
     
     # Note for vy:
     # vy > 0 => fly East
     # vy < 0 => fly West
-    EAST = 2
-    WEST = -2
+    EAST = 1.0
+    WEST = -1.0
 
     # Note for vz: 
     # vz < 0 => ascend
@@ -359,7 +359,6 @@ def vel_control_align_and_move_square():
 
     print("Yaw 270 absolute (West)")
     condition_yaw(270)
-
     print("Velocity West")
     send_ned_velocity(0, WEST, 0, DURATION_WEST_SEC)
     send_ned_velocity(0, 0, 0, 1)
