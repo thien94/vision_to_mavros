@@ -290,7 +290,7 @@ def pos_control_align_north_and_move_square():
     camera gimbal at the the selected location (in this case it aligns the whole vehicle to point at the ROI).
     """	
 
-    print("Yaw 0 absolute (north) for controlled behavior. Should not affect system without compass.")
+    print("Yaw 0 absolute (north). Should not affect system without compass.")
     condition_yaw(0)
 
     print("North (m): ", SIZE_M, ", East (m): 0m, Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
@@ -310,7 +310,7 @@ def pos_control_align_north_and_move_square():
     time.sleep(DURATION_SEC)
 
 
-def vel_control_align_north_and_move_forward_backward():
+def vel_control_align_and_move_square():
     """
     Fly the vehicle in a path using velocity vectors (the underlying code calls the 
     SET_POSITION_TARGET_LOCAL_NED command with the velocity parameters enabled).
@@ -323,6 +323,12 @@ def vel_control_align_north_and_move_forward_backward():
     # vx < 0 => fly South
     NORTH = 1.0
     SOUTH = -0.5
+    
+    # Note for vy:
+    # vy > 0 => fly East
+    # vy < 0 => fly West
+    EAST = 2
+    WEST = -2
 
     # Note for vz: 
     # vz < 0 => ascend
@@ -331,21 +337,37 @@ def vel_control_align_north_and_move_forward_backward():
     DOWN = 0.5
     
     # Set duration for each segment.
-    DURATION_FORWARD_SEC = 4
-    DURATION_BACKWARD_SEC = 2
+    DURATION_NORTH_SEC = 2
+    DURATION_SOUTH_SEC = 2
+    DURATION_EAST_SEC = 2
+    DURATION_WEST_SEC = 2
 
     # Control path using velocity commands
-    print("Forward/backward path using SET_POSITION_TARGET_LOCAL_NED and velocity parameters")
+    print("Point the vehicle to a specific direction, then moves using SET_POSITION_TARGET_LOCAL_NED and velocity parameters")
 
-    print("Yaw 0 absolute (north) for controlled behavior. Should not affect system without compass.")
+    print("Yaw 0 absolute (North)")
     condition_yaw(0)
-
     print("Velocity North")
-    send_ned_velocity(NORTH, 0, 0, DURATION_FORWARD_SEC)
+    send_ned_velocity(NORTH, 0, 0, DURATION_NORTH_SEC)
     send_ned_velocity(0, 0, 0, 1)
 
+    print("Yaw 180 absolute (South)")
+    condition_yaw(180)
     print("Velocity South")
-    send_ned_velocity(SOUTH, 0, 0,DURATION_BACKWARD_SEC)
+    send_ned_velocity(SOUTH, 0, 0, DURATION_SOUTH_SEC)
+    send_ned_velocity(0, 0, 0, 1)
+
+    print("Yaw 270 absolute (West)")
+    condition_yaw(270)
+
+    print("Velocity West")
+    send_ned_velocity(0, WEST, 0, DURATION_WEST_SEC)
+    send_ned_velocity(0, 0, 0, 1)
+
+    print("Yaw 90 absolute (East)")
+    condition_yaw(90)
+    print("Velocity East")
+    send_ned_velocity(0, EAST, 0, DURATION_EAST_SEC)
     send_ned_velocity(0, 0, 0, 1)
 
 
@@ -366,7 +388,7 @@ try:
         if (vehicle.mode.name == "LOITER") and (rc_channel_value > rc_control_thres):
             pos_control_align_north_and_move_square()
         elif (vehicle.mode.name == "GUIDED") and (rc_channel_value > rc_control_thres):
-            vel_control_align_north_and_move_forward_backward()
+            vel_control_align_and_move_square()
         else:
             print("Checking rc channel:", rc_control_channel, ", current value:", rc_channel_value, ", threshold to start: ", rc_control_thres)
             time.sleep(1)
