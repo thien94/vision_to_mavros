@@ -70,6 +70,7 @@ PRESET_FILE  = "../cfg/d4xx-default.json"
 
 # List of filters to be applied, in this order.
 # https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md
+
 filters = [
     [True, "Decimation Filter",     rs.decimation_filter()],
     [True, "Threshold Filter",      rs.threshold_filter()],
@@ -79,6 +80,17 @@ filters = [
     [False, "Hole Filling Filter",   rs.hole_filling_filter()],
     [True, "Disparity to Depth",    rs.disparity_transform(False)]
 ]
+
+## Applying values to the filters here
+## The filters can be tuned with opencv_depth_filtering.py script, and save the default values to here
+
+# decimation_magnitude = 8
+# filters[0][2].set_option(rs.option.filter_magnitude, decimation_magnitude)
+
+threshold_min_m = 0.15
+threshold_max_m = 10.0
+filters[1][2].set_option(rs.option.min_distance, threshold_min_m)
+filters[1][2].set_option(rs.option.max_distance, threshold_max_m)
 
 ######################################################
 ##  ArduPilot-related parameters - reconfigurable   ##

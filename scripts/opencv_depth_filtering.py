@@ -73,8 +73,21 @@ def on_trackbar_decimation(val):
     if val < decimation_magnitude_min:
         print("\nFilter magnitude for Decimation Filter cannot be smaller than ", decimation_magnitude_min)
         val = decimation_magnitude_min
-    
     filters[0][2].set_option(rs.option.filter_magnitude, val)
+
+threshold_min_m = 0.15
+threshold_max_m = 10.0
+def on_trackbar_max_threshold(val_m):
+    # Sanity check
+    if val_m < threshold_min_m:
+        print("\nMaximum threshold cannot be smaller than ", threshold_min_m)
+        val_m = threshold_min_m
+    elif val_m > threshold_max_m:
+        print("\nMaximum threshold cannot be larger than ", threshold_max_m)
+        val_m = threshold_max_m
+    # filters[1][2].set_option(rs.option.min_distance, val_m)
+    filters[1][2].set_option(rs.option.max_distance, val_m)
+
 
 spatial_magnitude_min = 1
 spatial_magnitude_max = 5
@@ -83,7 +96,6 @@ def on_trackbar_spatial_magnitude(val):
     if val < spatial_magnitude_min:
         print("\nFilter magnitude for Spatial Filter cannot be smaller than ", spatial_magnitude_min)
         val = spatial_magnitude_min
-    
     filters[3][2].set_option(rs.option.filter_magnitude, val)
 
 spatial_smooth_alpha_min = 0.25
@@ -96,7 +108,6 @@ def on_trackbar_spatial_smooth_alpha(val):
     if val < spatial_smooth_alpha_min:
         print("\nFilter magnitude for Spatial Filter cannot be smaller than ", spatial_smooth_alpha_min)
         val = spatial_smooth_alpha_min
-    
     filters[3][2].set_option(rs.option.filter_smooth_alpha, val)
 
 spatial_smooth_delta_min = 1
@@ -106,7 +117,6 @@ def on_trackbar_spatial_smooth_delta(val):
     if val < spatial_smooth_delta_min:
         print("\nSmooth alpha for Spatial Filter cannot be smaller than ", spatial_smooth_delta_min)
         val = spatial_smooth_delta_min
-    
     filters[3][2].set_option(rs.option.filter_smooth_delta, val)
 
 spatial_hole_filling_min = 0
@@ -116,7 +126,6 @@ def on_trackbar_spatial_hole_filling(val):
     if val < spatial_hole_filling_min:
         print("\nSmooth alpha for Spatial Filter cannot be smaller than ", spatial_hole_filling_min)
         val = spatial_hole_filling_min
-    
     filters[3][2].set_option(rs.option.holes_fill, val)
 
 hole_filling_filter_min = 0
@@ -211,6 +220,7 @@ try:
     # NOTE: - The trackbar's minimum is always zero and cannot be changed
     #       - The trackbar's steps are discrete (so 0-1-2 etc.)
     cv2.createTrackbar('Decimation magnitude [2-8]', OPTION_WINDOW_NAME, 0, decimation_magnitude_max, on_trackbar_decimation)
+    cv2.createTrackbar('Threshold [0-any] (cm)', OPTION_WINDOW_NAME, 0, int(threshold_max_m), on_trackbar_max_threshold)
     cv2.createTrackbar('Spatial magnitude [1-5]', OPTION_WINDOW_NAME, 0, spatial_magnitude_max, on_trackbar_spatial_magnitude)
     cv2.createTrackbar('Spatial smooth alpha [0.25-1]', OPTION_WINDOW_NAME, 0, spatial_smooth_alpha_scaled_max, on_trackbar_spatial_smooth_alpha)
     cv2.createTrackbar('Spatial smooth delta [1-50]', OPTION_WINDOW_NAME, 0, spatial_smooth_delta_max, on_trackbar_spatial_smooth_delta)
