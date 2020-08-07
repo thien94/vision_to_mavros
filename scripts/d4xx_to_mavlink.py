@@ -591,7 +591,7 @@ try:
             display_image = np.hstack((input_image, cv2.resize(output_image, (DEPTH_WIDTH, DEPTH_HEIGHT))))
 
             # Draw a horizontal line to visualize the obstacles' line
-            x1, y1 = int(DEPTH_WIDTH + 1), int(obstacle_line_height)
+            x1, y1 = int(DEPTH_WIDTH + obstacle_line_thickness_pixel / 2), int(obstacle_line_height)
             x2, y2 = int(DEPTH_WIDTH * 2), int(obstacle_line_height)
             line_thickness = obstacle_line_thickness_pixel
             cv2.line(display_image, (x1, y1), (x2, y2), (0, 255, 0), thickness=line_thickness)
