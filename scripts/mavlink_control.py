@@ -289,8 +289,8 @@ def pos_control_align_north_and_move_square():
     The code also sets the region of interest (MAV_CMD_DO_SET_ROI) via the `set_roi()` method. This points the 
     camera gimbal at the the selected location (in this case it aligns the whole vehicle to point at the ROI).
     """	
-    
-    print("Yaw 0 absolute (North)")
+
+    print("Yaw 0 absolute (north) for controlled behavior. Should not affect system without compass.")
     condition_yaw(0)
 
     print("North (m): ", SIZE_M, ", East (m): 0m, Height (m):", HEIGHT_M," for", DURATION_SEC, "seconds")
@@ -334,10 +334,10 @@ def vel_control_align_north_and_move_forward_backward():
     DURATION_FORWARD_SEC = 4
     DURATION_BACKWARD_SEC = 2
 
-    # Control path using velocity
+    # Control path using velocity commands
     print("Forward/backward path using SET_POSITION_TARGET_LOCAL_NED and velocity parameters")
 
-    print("Yaw 0 absolute (North)")
+    print("Yaw 0 absolute (north) for controlled behavior. Should not affect system without compass.")
     condition_yaw(0)
 
     print("Velocity North")
@@ -363,9 +363,9 @@ try:
     # Wait until the RC channel is turned on and the corresponding channel is switch
     print("Starting autonomous control...")
     while True:
-        if vehicle.mode.name == "LOITER" and rc_channel_value > rc_control_thres:
+        if (vehicle.mode.name == "LOITER") and (rc_channel_value > rc_control_thres):
             pos_control_align_north_and_move_square()
-        elif vehicle.mode.name == "GUIDED" and rc_channel_value > rc_control_thres:
+        elif (vehicle.mode.name == "GUIDED") and (rc_channel_value > rc_control_thres):
             vel_control_align_north_and_move_forward_backward()
         else:
             print("Checking rc channel:", rc_control_channel, ", current value:", rc_channel_value, ", threshold to start: ", rc_control_thres)
