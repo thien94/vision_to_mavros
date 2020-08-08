@@ -220,7 +220,7 @@ try:
     # NOTE: - The trackbar's minimum is always zero and cannot be changed
     #       - The trackbar's steps are discrete (so 0-1-2 etc.)
     cv2.createTrackbar('Decimation magnitude [2-8]', OPTION_WINDOW_NAME, 0, decimation_magnitude_max, on_trackbar_decimation)
-    cv2.createTrackbar('Threshold [0-any] (cm)', OPTION_WINDOW_NAME, 0, int(threshold_max_m), on_trackbar_max_threshold)
+    cv2.createTrackbar('Threshold [0-any] (cm)', OPTION_WINDOW_NAME, int(threshold_max_m), int(threshold_max_m), on_trackbar_max_threshold)
     cv2.createTrackbar('Spatial magnitude [1-5]', OPTION_WINDOW_NAME, 0, spatial_magnitude_max, on_trackbar_spatial_magnitude)
     cv2.createTrackbar('Spatial smooth alpha [0.25-1]', OPTION_WINDOW_NAME, 0, spatial_smooth_alpha_scaled_max, on_trackbar_spatial_smooth_alpha)
     cv2.createTrackbar('Spatial smooth delta [1-50]', OPTION_WINDOW_NAME, 0, spatial_smooth_delta_max, on_trackbar_spatial_smooth_delta)
