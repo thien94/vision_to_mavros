@@ -44,5 +44,5 @@ thread2.start()
 thread3 = threading.Thread(target=run_d4xx)
 thread3.start()
 
-thread4 = threading.Thread(target=run_control)
-thread4.start()
+# thread4 = threading.Thread(target=run_control)
+# thread4.start()
