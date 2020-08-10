@@ -43,7 +43,6 @@ from pymavlink import mavutil
 from numba import njit
 
 # In order to import cv2 under python3 when you also have ROS Kinetic installed
-import os
 if os.path.exists("/opt/ros/kinetic/lib/python2.7/dist-packages"):
     sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages') 
 if os.path.exists("~/anaconda3/lib/python3.7/site-packages"):
@@ -102,7 +101,6 @@ if filters[1][0] is True:
 # Default configurations for connection to the FCU
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
-connection_timeout_sec_default = 5
 
 # Use this to rotate all processed data
 camera_facing_angle_degree = 0
@@ -110,7 +108,7 @@ camera_facing_angle_degree = 0
 # Enable/disable each message/function individually
 enable_msg_obstacle_distance = True
 enable_msg_distance_sensor = False
-obstacle_distance_msg_hz_default = 15
+obstacle_distance_msg_hz_default = 15.0
 
 # lock for thread synchronization
 lock = threading.Lock()
@@ -148,7 +146,6 @@ distances_array_length = 72
 angle_offset = None
 increment_f  = None
 distances = np.ones((distances_array_length,), dtype=np.uint16) * (max_depth_cm + 1)
-
 
 ######################################################
 ##  Parsing user' inputs                            ##
