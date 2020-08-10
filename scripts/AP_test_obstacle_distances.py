@@ -13,18 +13,16 @@ os.environ["MAVLINK20"] = "1"
 # Import the libraries
 import sys
 import numpy as np
-import math as m
 import time
 import argparse
 import threading
 
 from time import sleep
 from apscheduler.schedulers.background import BackgroundScheduler
-from pymavlink import mavutil
-from dronekit import connect, VehicleMode
+from dronekit import connect
 
 ######################################################
-##  ArduPilot-related parameters - reconfigurable   ##
+##  Reconfigurable parameters                       ##
 ######################################################
 
 # Default configurations for connection to the FCU
@@ -92,8 +90,8 @@ def send_obstacle_distance_message():
     #       Camera          <- Input: depth image, obtained from depth camera (implemented in d4xx_to_mavlink.py)
     #
     
-    angle_start = -39.5   # -FOV/2
-    angle_end = 70.0 # 39.5 - real camera (2 arcs), <= 69.0: 2 arcs, > 70.0: 3 arcs 
+    angle_start = -39.5     # -FOV/2
+    angle_end = 70.0        # 39.5 - real camera (2 arcs), <= 69.0: 2 arcs, > 70.0: 3 arcs 
 
     FOV = angle_end - angle_start
     angle_offset = angle_start
@@ -104,7 +102,7 @@ def send_obstacle_distance_message():
     max_dist_cm = 800
     cur_dist_cm = 200
 
-    # Setup the expected arcs
+    # Setup the distances array with the same value (cur_dist_cm)
     distances = np.ones((distances_array_length,), dtype=np.uint16) * cur_dist_cm
 
     current_time_us = int(round(time.time() * 1000000))
@@ -180,12 +178,11 @@ def update_timesync(ts=0, tc=0):
 
 # Establish connection to the FCU
 def vehicle_connect():
-    global vehicle, is_vehicle_connected, connection_string_default, connection_baudrate
+    global vehicle, is_vehicle_connected
 
     if vehicle == None:
         try:
             vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
-
         except Exception as e:
             print(e)
             sleep(1)
