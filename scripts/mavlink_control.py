@@ -326,14 +326,14 @@ def vel_control_align_north_and_move_square():
     #Set up velocity vector to map to each direction.
     # vx > 0 => fly North
     # vx < 0 => fly South
-    NORTH = 1.0
-    SOUTH = -1.0
+    NORTH = 0.5
+    SOUTH = -0.5
     
     # Note for vy:
     # vy > 0 => fly East
     # vy < 0 => fly West
-    EAST = 1.0
-    WEST = -1.0
+    EAST = 0.5
+    WEST = -0.5
 
     # Note for vz: 
     # vz < 0 => ascend
@@ -342,16 +342,17 @@ def vel_control_align_north_and_move_square():
     DOWN = 0.5
     
     # Set duration for each segment.
-    DURATION_NORTH_SEC = 2
-    DURATION_SOUTH_SEC = 2
-    DURATION_EAST_SEC = 2
-    DURATION_WEST_SEC = 2
+    DURATION_NORTH_SEC = 4
+    DURATION_SOUTH_SEC = 4
+    DURATION_EAST_SEC = 4
+    DURATION_WEST_SEC = 4
 
     # Control path using velocity commands
     print("Point the vehicle to a specific direction, then moves using SET_POSITION_TARGET_LOCAL_NED and velocity parameters")
 
     print("Yaw 0 absolute (North)")
     condition_yaw(0)
+    send_ned_velocity(0, 0, 0, 1)
     print("Velocity North")
     send_ned_velocity(NORTH, 0, 0, DURATION_NORTH_SEC)
     send_ned_velocity(0, 0, 0, 1)

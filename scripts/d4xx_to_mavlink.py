@@ -61,7 +61,7 @@ DEPTH_HEIGHT= 480               # Defines the number of lines for each frame or 
 FPS         = 30                # Defines the rate of frames per second
 DEPTH_RANGE_M = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
 
-obstacle_line_height_ratio = 0.25  # [0-1]: 0-Top, 1-Bottom. The height of the horizontal line to find distance to obstacle.
+obstacle_line_height_ratio = 0.4  # [0-1]: 0-Top, 1-Bottom. The height of the horizontal line to find distance to obstacle.
 obstacle_line_thickness_pixel = 10 # [1-DEPTH_HEIGHT]: Number of pixel rows to use to generate the obstacle distance message. For each column, the scan will return the minimum value for those pixels centered vertically in the image.
 
 USE_PRESET_FILE = True
@@ -113,7 +113,7 @@ obstacle_distance_msg_hz_default = 15.0
 # lock for thread synchronization
 lock = threading.Lock()
 
-debug_enable_default = 0
+debug_enable_default = 1
 
 ######################################################
 ##  Global variables                                ##
