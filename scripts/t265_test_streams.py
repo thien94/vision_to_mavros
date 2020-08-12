@@ -11,6 +11,11 @@ import numpy as np
 # Get realsense pipeline handle
 pipe = rs.pipeline()
 
+# Print all connected devices and find the T265
+devices = rs.context().devices
+for i in range(len(devices)):
+    print('Found device:', devices[i].get_info(rs.camera_info.name), ', with serial number: ', devices[i].get_info(rs.camera_info.serial_number))
+
 # Configure the pipeline
 cfg = rs.config()
 

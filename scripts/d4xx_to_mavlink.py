@@ -43,7 +43,6 @@ from pymavlink import mavutil
 from numba import njit
 
 # In order to import cv2 under python3 when you also have ROS Kinetic installed
-import os
 if os.path.exists("/opt/ros/kinetic/lib/python2.7/dist-packages"):
     sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages') 
 if os.path.exists("~/anaconda3/lib/python3.7/site-packages"):
@@ -57,16 +56,20 @@ import cv2
 # Sensor-specific parameter, for D435: https://www.intelrealsense.com/depth-camera-d435/
 STREAM_TYPE = [rs.stream.depth, rs.stream.color]  # rs2_stream is a types of data provided by RealSense device
 FORMAT      = [rs.format.z16, rs.format.bgr8]     # rs2_format is identifies how binary data is encoded within a frame
-WIDTH       = 640              # Defines the number of columns for each frame or zero for auto resolve
-HEIGHT      = 480              # Defines the number of lines for each frame or zero for auto resolve
-FPS         = 30               # Defines the rate of frames per second
-DEPTH_RANGE = [0.1, 8.0]       # Replace with your sensor's specifics, in meter
+DEPTH_WIDTH = 640               # Defines the number of columns for each frame or zero for auto resolve
+DEPTH_HEIGHT= 480               # Defines the number of lines for each frame or zero for auto resolve
+FPS         = 30                # Defines the rate of frames per second
+DEPTH_RANGE_M = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
+
+obstacle_line_height_ratio = 0.25  # [0-1]: 0-Top, 1-Bottom. The height of the horizontal line to find distance to obstacle.
+obstacle_line_thickness_pixel = 10 # [1-DEPTH_HEIGHT]: Number of pixel rows to use to generate the obstacle distance message. For each column, the scan will return the minimum value for those pixels centered vertically in the image.
 
 USE_PRESET_FILE = True
 PRESET_FILE  = "../cfg/d4xx-default.json"
 
 # List of filters to be applied, in this order.
 # https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md
+
 filters = [
     [True, "Decimation Filter",     rs.decimation_filter()],
     [True, "Threshold Filter",      rs.threshold_filter()],
@@ -77,6 +80,20 @@ filters = [
     [True, "Disparity to Depth",    rs.disparity_transform(False)]
 ]
 
+#
+# The filters can be tuned with opencv_depth_filtering.py script, and save the default values to here
+# Individual filters have different options so one have to apply the values accordingly
+#
+
+# decimation_magnitude = 8
+# filters[0][2].set_option(rs.option.filter_magnitude, decimation_magnitude)
+
+threshold_min_m = DEPTH_RANGE_M[0]
+threshold_max_m = DEPTH_RANGE_M[1]
+if filters[1][0] is True:
+    filters[1][2].set_option(rs.option.min_distance, threshold_min_m)
+    filters[1][2].set_option(rs.option.max_distance, threshold_max_m)
+
 ######################################################
 ##  ArduPilot-related parameters - reconfigurable   ##
 ######################################################
@@ -84,7 +101,6 @@ filters = [
 # Default configurations for connection to the FCU
 connection_string_default = '/dev/ttyUSB0'
 connection_baudrate_default = 921600
-connection_timeout_sec_default = 5
 
 # Use this to rotate all processed data
 camera_facing_angle_degree = 0
@@ -92,7 +108,7 @@ camera_facing_angle_degree = 0
 # Enable/disable each message/function individually
 enable_msg_obstacle_distance = True
 enable_msg_distance_sensor = False
-obstacle_distance_msg_hz_default = 15
+obstacle_distance_msg_hz_default = 15.0
 
 # lock for thread synchronization
 lock = threading.Lock()
@@ -106,11 +122,14 @@ debug_enable_default = 0
 # FCU connection variables
 vehicle = None
 is_vehicle_connected = False
+vehicle_pitch_rad = None
 
 # Camera-related variables
 pipe = None
 depth_scale = 0
 colorizer = rs.colorizer()
+depth_hfov_deg = None
+depth_vfov_deg = None
 
 # The name of the display window
 display_name  = 'Input/output depth'
@@ -121,11 +140,11 @@ current_time_us = 0
 
 # Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
 # See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
-min_depth_cm = int(DEPTH_RANGE[0] * 100)  # In cm
-max_depth_cm = int(DEPTH_RANGE[1] * 100)  # In cm, should be a little conservative
+min_depth_cm = int(DEPTH_RANGE_M[0] * 100)  # In cm
+max_depth_cm = int(DEPTH_RANGE_M[1] * 100)  # In cm, should be a little conservative
 distances_array_length = 72
-angle_offset = 0
-increment_f  = 0
+angle_offset = None
+increment_f  = None
 distances = np.ones((distances_array_length,), dtype=np.uint16) * (max_depth_cm + 1)
 
 ######################################################
@@ -189,8 +208,8 @@ else:
 
 # https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
 def send_obstacle_distance_message():
-    global current_time_us, distances
-    if angle_offset == 0 or increment_f == 0:
+    global current_time_us, distances, camera_facing_angle_degree
+    if angle_offset is None or increment_f is None:
         print("Please call set_obstacle_distance_params before continue")
     else:
         msg = vehicle.message_factory.obstacle_distance_encode(
@@ -208,20 +227,46 @@ def send_obstacle_distance_message():
         vehicle.send_mavlink(msg)
         vehicle.flush()
 
+        #
+        # Temporary fix to make the right-most range appear on MP's Proximity GUI
+        #
+        # Send the minimum distance of the 1/4 right-most part of the horizontal FOV to the orientation right next to the center
+        end_point = distances_array_length - 1
+        start_point = int(0.75 * end_point)
+        min_rightmost_distance = min(distances[start_point:end_point])
+        orientation = int(camera_facing_angle_degree / 45) + 1
+        send_single_distance_sensor_msg(min_rightmost_distance, orientation)
+
 # https://mavlink.io/en/messages/common.html#DISTANCE_SENSOR
-# To-do: Possible extension for individual object detection
+def send_single_distance_sensor_msg(distance, orientation):
+    # Average out a portion of the centermost part
+    msg = vehicle.message_factory.distance_sensor_encode(
+        0,                  # ms Timestamp (UNIX time or time since system boot) (ignored)
+        min_depth_cm,       # min_distance, uint16_t, cm
+        max_depth_cm,       # min_distance, uint16_t, cm
+        distance,           # current_distance,	uint16_t, cm	
+        0,	                # type : 0 (ignored)
+        0,                  # id : 0 (ignored)
+        orientation,        # orientation
+        0                   # covariance : 0 (ignored)
+    )
+
+    vehicle.send_mavlink(msg)
+    vehicle.flush()
+
+# https://mavlink.io/en/messages/common.html#DISTANCE_SENSOR
 def send_distance_sensor_message():
-    global current_time, distances
+    global distances
     # Average out a portion of the centermost part
     curr_dist = int(np.mean(distances[33:38]))
     msg = vehicle.message_factory.distance_sensor_encode(
-        0,              # us Timestamp (UNIX time or time since system boot) (ignored)
+        0,# ms Timestamp (UNIX time or time since system boot) (ignored)
         min_depth_cm,   # min_distance, uint16_t, cm
         max_depth_cm,   # min_distance, uint16_t, cm
         curr_dist,      # current_distance,	uint16_t, cm	
         0,	            # type : 0 (ignored)
         0,              # id : 0 (ignored)
-        0,              # forward
+        int(camera_facing_angle_degree / 45),              # orientation
         0               # covariance : 0 (ignored)
     )
 
@@ -256,25 +301,30 @@ def update_timesync(ts=0, tc=0):
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
-# Listen to attitude data to acquire heading when compass data is enabled
+# Listen to ATTITUDE data: https://mavlink.io/en/messages/common.html#ATTITUDE
 def att_msg_callback(self, attr_name, value):
-    global heading_north_yaw
-    if heading_north_yaw is None:
-        heading_north_yaw = value.yaw
-        print("INFO: Received first ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
-    else:
-        heading_north_yaw = value.yaw
-        print("INFO: Received ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
+    global vehicle_pitch_rad
+    vehicle_pitch_rad = value.pitch
+    if debug_enable == 1:
+        print("INFO: Received ATTITUDE msg, current pitch is %.2f" % m.degrees(vehicle_pitch_rad), "degrees")
+
+# Listen to AHRS2 data: https://mavlink.io/en/messages/ardupilotmega.html#AHRS2
+def ahrs2_msg_callback(self, attr_name, value):
+    global vehicle_pitch_rad
+    vehicle_pitch_rad = value.pitch
+    if debug_enable == 1:
+        print("INFO: Received AHRS2 msg, current pitch is %.2f" % m.degrees(vehicle_pitch_rad), "degrees")
 
 # Establish connection to the FCU
 def vehicle_connect():
     global vehicle, is_vehicle_connected
-    
-    try:
-        vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
-    except:
-        print('Connection error! Retrying...')
-        sleep(1)
+
+    if vehicle == None:
+        try:
+            vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
+        except:
+            print('Connection error! Retrying...')
+            sleep(1)
 
     if vehicle == None:
         is_vehicle_connected = False
@@ -342,9 +392,9 @@ def realsense_connect():
 
     # Configure depth and color streams
     config = rs.config()
-    config.enable_stream(STREAM_TYPE[0], WIDTH, HEIGHT, FORMAT[0], FPS)
+    config.enable_stream(STREAM_TYPE[0], DEPTH_WIDTH, DEPTH_HEIGHT, FORMAT[0], FPS)
     if debug_enable == 1:
-        config.enable_stream(STREAM_TYPE[1], WIDTH, HEIGHT, FORMAT[1], FPS)
+        config.enable_stream(STREAM_TYPE[1], DEPTH_WIDTH, DEPTH_HEIGHT, FORMAT[1], FPS)
 
     # Start streaming with requested config
     profile = pipe.start(config)
@@ -362,7 +412,7 @@ def realsense_configure_setting(setting_file):
 
 # Setting parameters for the OBSTACLE_DISTANCE message based on actual camera's intrinsics and user-defined params
 def set_obstacle_distance_params():
-    global angle_offset, camera_facing_angle_degree, increment_f, depth_scale
+    global angle_offset, camera_facing_angle_degree, increment_f, depth_scale, depth_hfov_deg, depth_vfov_deg, obstacle_line_height_ratio, obstacle_line_thickness_pixel
     
     # Obtain the intrinsics from the camera itself
     profiles = pipe.get_active_profile()
@@ -370,11 +420,51 @@ def set_obstacle_distance_params():
     print("INFO: Depth camera intrinsics: ", depth_intrinsics)
     
     # For forward facing camera with a horizontal wide view:
-    # HFOV=2*atan[w/(2.fx)], VFOV=2*atan[h/(2.fy)], DFOV=2*atan(Diag/2*f), Diag=sqrt(w^2 + h^2)
-    HFOV = m.degrees(2 * m.atan(WIDTH / (2 * depth_intrinsics.fx)))
-    angle_offset = camera_facing_angle_degree - (HFOV / 2) 
-    increment_f  =  HFOV / distances_array_length
-    print("INFO: Depth camera HFOV: %0.2f degrees" % HFOV)
+    #   HFOV=2*atan[w/(2.fx)],
+    #   VFOV=2*atan[h/(2.fy)],
+    #   DFOV=2*atan(Diag/2*f),
+    #   Diag=sqrt(w^2 + h^2)
+    depth_hfov_deg = m.degrees(2 * m.atan(DEPTH_WIDTH / (2 * depth_intrinsics.fx)))
+    depth_vfov_deg = m.degrees(2 * m.atan(DEPTH_HEIGHT / (2 * depth_intrinsics.fy)))
+    print("INFO: Depth camera HFOV: %0.2f degrees" % depth_hfov_deg)
+    print("INFO: Depth camera VFOV: %0.2f degrees" % depth_vfov_deg)
+
+    angle_offset = camera_facing_angle_degree - (depth_hfov_deg / 2)
+    increment_f = depth_hfov_deg / distances_array_length
+    print("INFO: OBSTACLE_DISTANCE angle_offset: %0.3f" % angle_offset)
+    print("INFO: OBSTACLE_DISTANCE increment_f: %0.3f" % increment_f)
+    print("INFO: OBSTACLE_DISTANCE coverage: from %0.3f" % (angle_offset), "to %0.3f degrees" % (angle_offset + increment_f * distances_array_length))
+
+    # Sanity check for depth configuration
+    if obstacle_line_height_ratio < 0 or obstacle_line_height_ratio > 1:
+        print("Please make sure the horizontal position is within [0-1]: ", obstacle_line_height_ratio)
+        sys.exit()
+
+    if obstacle_line_thickness_pixel < 1 or obstacle_line_thickness_pixel > DEPTH_HEIGHT:
+        print("Please make sure the thickness is within [0-DEPTH_HEIGHT]: ", obstacle_line_thickness_pixel)
+        sys.exit()
+
+# Find the height of the horizontal line to calculate the obstacle distances
+#   - Basis: depth camera's vertical FOV, user's input
+#   - Compensation: vehicle's current pitch angle
+def find_obstacle_line_height():
+    global vehicle_pitch_rad, depth_vfov_deg, DEPTH_HEIGHT
+
+    # Basic position
+    obstacle_line_height = DEPTH_HEIGHT * obstacle_line_height_ratio
+
+    # Compensate for the vehicle's pitch angle if data is available
+    if vehicle_pitch_rad is not None and depth_vfov_deg is not None:
+        delta_height = m.sin(vehicle_pitch_rad / 2) / m.sin(m.radians(depth_vfov_deg) / 2) * DEPTH_HEIGHT
+        obstacle_line_height += delta_height
+
+    # Sanity check
+    if obstacle_line_height < 0:
+        obstacle_line_height = 0
+    elif obstacle_line_height > DEPTH_HEIGHT:
+        obstacle_line_height = DEPTH_HEIGHT
+    
+    return obstacle_line_height
 
 # Calculate the distances array by dividing the FOV (horizontal) into $distances_array_length rays,
 # then pick out the depth value at the pixel corresponding to each ray. Based on the definition of
@@ -394,14 +484,40 @@ def set_obstacle_distance_params():
 # Note that we assume the input depth_mat is already processed by at least hole-filling filter.
 # Otherwise, the output array might not be stable from frame to frame.
 @njit
-def distances_from_depth_image(depth_mat, distances, min_depth_m, max_depth_m):
+def distances_from_depth_image(obstacle_line_height, depth_mat, distances, min_depth_m, max_depth_m, obstacle_line_thickness_pixel):
+    # Parameters for depth image
     depth_img_width  = depth_mat.shape[1]
     depth_img_height = depth_mat.shape[0]
+
+    # Parameters for obstacle distance message
     step = depth_img_width / distances_array_length
 
     for i in range(distances_array_length):
+        # Each range (left to right) is found from a set of rows within a column
+        #  [ ] -> ignored
+        #  [x] -> center + obstacle_line_thickness_pixel / 2
+        #  [x] -> center = obstacle_line_height (moving up and down according to the vehicle's pitch angle)
+        #  [x] -> center - obstacle_line_thickness_pixel / 2
+        #  [ ] -> ignored
+        #   ^ One of [distances_array_length] number of columns, from left to right in the image
+        center_pixel = obstacle_line_height
+        upper_pixel = center_pixel + obstacle_line_thickness_pixel / 2
+        lower_pixel = center_pixel - obstacle_line_thickness_pixel / 2
+
+        # Sanity checks
+        if upper_pixel > depth_img_height:
+            upper_pixel = depth_img_height
+        elif upper_pixel < 1:
+            upper_pixel = 1
+        if lower_pixel > depth_img_height:
+            lower_pixel = depth_img_height - 1
+        elif lower_pixel < 0:
+            lower_pixel = 0
+
         # Converting depth from uint16_t unit to metric unit. depth_scale is usually 1mm following ROS convention.
-        dist_m = depth_mat[int(depth_img_height/2), int(i * step)] * depth_scale
+        # dist_m = depth_mat[int(obstacle_line_height), int(i * step)] * depth_scale
+        min_point_in_scan = min(depth_mat[int(lower_pixel):int(upper_pixel), int(i * step)])
+        dist_m = min_point_in_scan * depth_scale
 
         # Default value, unless overwritten: 
         #   A value of max_distance + 1 (cm) means no obstacle is present. 
@@ -445,6 +561,10 @@ else:
     print("INFO: Realsense pipe and vehicle object closed.")
     sys.exit()
 
+# Listen and extract necessary attitude's data
+vehicle.add_message_listener('ATTITUDE', att_msg_callback)
+# vehicle.add_message_listener('AHRS2', ahrs2_msg_callback)
+
 sched.start()
 
 # Begin of the main loop
@@ -473,13 +593,20 @@ try:
         depth_mat = np.asanyarray(depth_data)
 
         # Create obstacle distance data from depth image
-        distances_from_depth_image(depth_mat, distances, DEPTH_RANGE[0], DEPTH_RANGE[1])
+        obstacle_line_height = find_obstacle_line_height()
+        distances_from_depth_image(obstacle_line_height, depth_mat, distances, DEPTH_RANGE_M[0], DEPTH_RANGE_M[1], obstacle_line_thickness_pixel)
 
         if debug_enable == 1:
-            # Prepare the images
+            # Prepare the data
             input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
             output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
-            display_image = np.hstack((input_image, cv2.resize(output_image, (WIDTH, HEIGHT))))
+            display_image = np.hstack((input_image, cv2.resize(output_image, (DEPTH_WIDTH, DEPTH_HEIGHT))))
+
+            # Draw a horizontal line to visualize the obstacles' line
+            x1, y1 = int(DEPTH_WIDTH + obstacle_line_thickness_pixel / 2), int(obstacle_line_height)
+            x2, y2 = int(DEPTH_WIDTH * 2), int(obstacle_line_height)
+            line_thickness = obstacle_line_thickness_pixel
+            cv2.line(display_image, (x1, y1), (x2, y2), (0, 255, 0), thickness=line_thickness)
 
             # Put the fps in the corner of the image
             processing_speed = 1 / (time.time() - last_time)
