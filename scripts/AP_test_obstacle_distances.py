@@ -91,7 +91,7 @@ def send_obstacle_distance_message():
     #
     
     angle_start = -39.5     # -FOV/2
-    angle_end = 70.0        # 39.5 - real camera (2 arcs), <= 69.0: 2 arcs, > 70.0: 3 arcs 
+    angle_end = 39.5        # 39.5 - real camera (2 arcs), <= 69.0: 2 arcs, > 70.0: 3 arcs 
 
     FOV = angle_end - angle_start
     angle_offset = angle_start

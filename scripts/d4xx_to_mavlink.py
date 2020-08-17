@@ -227,16 +227,6 @@ def send_obstacle_distance_message():
         vehicle.send_mavlink(msg)
         vehicle.flush()
 
-        #
-        # Temporary fix to make the right-most range appear on MP's Proximity GUI
-        #
-        # Send the minimum distance of the 1/4 right-most part of the horizontal FOV to the orientation right next to the center
-        end_point = distances_array_length - 1
-        start_point = int(0.75 * end_point)
-        min_rightmost_distance = min(distances[start_point:end_point])
-        orientation = int(camera_facing_angle_degree / 45) + 1
-        send_single_distance_sensor_msg(min_rightmost_distance, orientation)
-
 # https://mavlink.io/en/messages/common.html#DISTANCE_SENSOR
 def send_single_distance_sensor_msg(distance, orientation):
     # Average out a portion of the centermost part
