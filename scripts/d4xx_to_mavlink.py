@@ -506,7 +506,7 @@ def distances_from_depth_image(obstacle_line_height, depth_mat, distances, min_d
 
         # Converting depth from uint16_t unit to metric unit. depth_scale is usually 1mm following ROS convention.
         # dist_m = depth_mat[int(obstacle_line_height), int(i * step)] * depth_scale
-        min_point_in_scan = min(depth_mat[int(lower_pixel):int(upper_pixel), int(i * step)])
+        min_point_in_scan = np.min(depth_mat[int(lower_pixel):int(upper_pixel), int(i * step)])
         dist_m = min_point_in_scan * depth_scale
 
         # Default value, unless overwritten: 
