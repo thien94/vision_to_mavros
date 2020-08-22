@@ -49,6 +49,12 @@ if os.path.exists("~/anaconda3/lib/python3.7/site-packages"):
     sys.path.append('~/anaconda3/lib/python3.7/site-packages')
 import cv2
 
+# To setup video streaming
+import gi
+gi.require_version('Gst', '1.0')
+gi.require_version('GstRtspServer', '1.0')
+from gi.repository import Gst, GstRtspServer, GLib
+
 ######################################################
 ##  Depth parameters - reconfigurable               ##
 ######################################################
@@ -66,6 +72,10 @@ obstacle_line_thickness_pixel = 10 # [1-DEPTH_HEIGHT]: Number of pixel rows to u
 
 USE_PRESET_FILE = True
 PRESET_FILE  = "../cfg/d4xx-default.json"
+
+RTSP_STREAMING_ENABLE = True
+RTSP_PORT = "8554"
+RTSP_MOUNT_POINT = "/d4xx"
 
 # List of filters to be applied, in this order.
 # https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md
@@ -133,6 +143,7 @@ depth_vfov_deg = None
 
 # The name of the display window
 display_name  = 'Input/output depth'
+rtsp_streaming_img = None
 
 # Data variables
 data = None
@@ -383,7 +394,7 @@ def realsense_connect():
     # Configure depth and color streams
     config = rs.config()
     config.enable_stream(STREAM_TYPE[0], DEPTH_WIDTH, DEPTH_HEIGHT, FORMAT[0], FPS)
-    if debug_enable == 1:
+    if RTSP_STREAMING_ENABLE is True:
         config.enable_stream(STREAM_TYPE[1], DEPTH_WIDTH, DEPTH_HEIGHT, FORMAT[1], FPS)
 
     # Start streaming with requested config
@@ -518,6 +529,61 @@ def distances_from_depth_image(obstacle_line_height, depth_mat, distances, min_d
         if dist_m > min_depth_m and dist_m < max_depth_m:
             distances[i] = dist_m * 100
 
+
+######################################################
+##  Functions - RTSP Streaming                      ##
+##  Adapted from https://github.com/VimDrones/realsense-helper/blob/master/fisheye_stream_to_rtsp.py, credit to: @Huibean (GitHub)
+######################################################
+
+class SensorFactory(GstRtspServer.RTSPMediaFactory):
+    def __init__(self, **properties):
+        super(SensorFactory, self).__init__(**properties)
+        self.number_frames = 0
+        self.fps = FPS
+        self.duration = 1 / self.fps * Gst.SECOND
+        self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
+                             'caps=video/x-raw,format=RGB,width=640,height=480,framerate={}/1 ' \
+                             '! videoconvert ! video/x-raw,format=I420 ' \
+                             '! x264enc speed-preset=ultrafast tune=zerolatency ' \
+                             '! rtph264pay config-interval=1 name=pay0 pt=96'.format(self.fps)
+
+    def on_need_data(self, src, length):
+        global rtsp_streaming_img
+        frame = rtsp_streaming_img
+        if frame is not None:
+            data = frame.tobytes()
+            buf = Gst.Buffer.new_allocate(None, len(data), None)
+            buf.fill(0, data)
+            buf.duration = self.duration
+            timestamp = self.number_frames * self.duration
+            buf.pts = buf.dts = int(timestamp)
+            buf.offset = timestamp
+            self.number_frames += 1
+            retval = src.emit('push-buffer', buf)
+            if retval != Gst.FlowReturn.OK:
+                print(retval)
+
+    def do_create_element(self, url):
+        return Gst.parse_launch(self.launch_string)
+
+    def do_configure(self, rtsp_media):
+        self.number_frames = 0
+        appsrc = rtsp_media.get_element().get_child_by_name('source')
+        appsrc.connect('need-data', self.on_need_data)
+
+
+class GstServer(GstRtspServer.RTSPServer):
+    def __init__(self, **properties):
+        super(GstServer, self).__init__(**properties)
+        factory = SensorFactory()
+        factory.set_shared(True)
+        self.get_mount_points().add_factory(RTSP_MOUNT_POINT, factory)
+        self.attach(None)
+
+def GstLoop():
+    loop = GLib.MainLoop()
+    loop.run()
+
 ######################################################
 ##  Main code starts here                           ##
 ######################################################
@@ -555,6 +621,14 @@ else:
 vehicle.add_message_listener('ATTITUDE', att_msg_callback)
 # vehicle.add_message_listener('AHRS2', ahrs2_msg_callback)
 
+if RTSP_STREAMING_ENABLE is True:
+    send_msg_to_gcs('RTSP at rtsp://<ip-address>:' + RTSP_PORT + RTSP_MOUNT_POINT)
+    Gst.init(None)
+    server = GstServer()
+    threading.Thread(target=GstLoop, args=()).start()
+else:
+    send_msg_to_gcs('RTSP not streaming')
+
 sched.start()
 
 # Begin of the main loop
@@ -565,6 +639,7 @@ try:
         # Calls to get_frame_data(...) and get_frame_timestamp(...) on a device will return stable values until wait_for_frames(...) is called
         frames = pipe.wait_for_frames()
         depth_frame = frames.get_depth_frame()
+        color_frame = frames.get_color_frame()
 
         if not depth_frame:
             continue
@@ -585,6 +660,10 @@ try:
         # Create obstacle distance data from depth image
         obstacle_line_height = find_obstacle_line_height()
         distances_from_depth_image(obstacle_line_height, depth_mat, distances, DEPTH_RANGE_M[0], DEPTH_RANGE_M[1], obstacle_line_thickness_pixel)
+
+        if RTSP_STREAMING_ENABLE is True:
+            color_image = np.asanyarray(color_frame.get_data())
+            rtsp_streaming_img = color_image
 
         if debug_enable == 1:
             # Prepare the data
