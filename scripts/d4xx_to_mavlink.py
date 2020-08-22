@@ -15,6 +15,7 @@
 #   pip3 install pyserial
 #   pip3 install numba
 #   pip3 install opencv-python
+#   sudo apt -y install python3-gst-1.0 gir1.2-gst-rtsp-server-1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-ugly libx264-dev
 # Only necessary if you installed the minimal version of Ubuntu:
 #   sudo apt install python3-opencv
 
@@ -55,17 +56,22 @@ gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')
 from gi.repository import Gst, GstRtspServer, GLib
 
+# To obtain ip address
+import socket
+
 ######################################################
 ##  Depth parameters - reconfigurable               ##
 ######################################################
 
 # Sensor-specific parameter, for D435: https://www.intelrealsense.com/depth-camera-d435/
-STREAM_TYPE = [rs.stream.depth, rs.stream.color]  # rs2_stream is a types of data provided by RealSense device
-FORMAT      = [rs.format.z16, rs.format.bgr8]     # rs2_format is identifies how binary data is encoded within a frame
-DEPTH_WIDTH = 640               # Defines the number of columns for each frame or zero for auto resolve
-DEPTH_HEIGHT= 480               # Defines the number of lines for each frame or zero for auto resolve
-FPS         = 30                # Defines the rate of frames per second
-DEPTH_RANGE_M = [0.1, 8.0]        # Replace with your sensor's specifics, in meter
+STREAM_TYPE  = [rs.stream.depth, rs.stream.color]  # rs2_stream is a types of data provided by RealSense device
+FORMAT       = [rs.format.z16, rs.format.bgr8]     # rs2_format is identifies how binary data is encoded within a frame
+DEPTH_WIDTH  = 640               # Defines the number of columns for each frame or zero for auto resolve
+DEPTH_HEIGHT = 480               # Defines the number of lines for each frame or zero for auto resolve
+COLOR_WIDTH  = 640
+COLOR_HEIGHT = 480
+FPS          = 30
+DEPTH_RANGE_M = [0.1, 8.0]       # Replace with your sensor's specifics, in meter
 
 obstacle_line_height_ratio = 0.25  # [0-1]: 0-Top, 1-Bottom. The height of the horizontal line to find distance to obstacle.
 obstacle_line_thickness_pixel = 10 # [1-DEPTH_HEIGHT]: Number of pixel rows to use to generate the obstacle distance message. For each column, the scan will return the minimum value for those pixels centered vertically in the image.
@@ -81,13 +87,13 @@ RTSP_MOUNT_POINT = "/d4xx"
 # https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md
 
 filters = [
-    [True, "Decimation Filter",     rs.decimation_filter()],
-    [True, "Threshold Filter",      rs.threshold_filter()],
-    [True, "Depth to Disparity",    rs.disparity_transform(True)],
-    [True, "Spatial Filter",        rs.spatial_filter()],
-    [True, "Temporal Filter",       rs.temporal_filter()],
-    [False, "Hole Filling Filter",   rs.hole_filling_filter()],
-    [True, "Disparity to Depth",    rs.disparity_transform(False)]
+    [True,  "Decimation Filter",   rs.decimation_filter()],
+    [True,  "Threshold Filter",    rs.threshold_filter()],
+    [True,  "Depth to Disparity",  rs.disparity_transform(True)],
+    [True,  "Spatial Filter",      rs.spatial_filter()],
+    [True,  "Temporal Filter",     rs.temporal_filter()],
+    [False, "Hole Filling Filter", rs.hole_filling_filter()],
+    [True,  "Disparity to Depth",  rs.disparity_transform(False)]
 ]
 
 #
@@ -391,11 +397,11 @@ def realsense_connect():
     # Declare RealSense pipe, encapsulating the actual device and sensors
     pipe = rs.pipeline()
 
-    # Configure depth and color streams
+    # Configure image stream(s)
     config = rs.config()
     config.enable_stream(STREAM_TYPE[0], DEPTH_WIDTH, DEPTH_HEIGHT, FORMAT[0], FPS)
     if RTSP_STREAMING_ENABLE is True:
-        config.enable_stream(STREAM_TYPE[1], DEPTH_WIDTH, DEPTH_HEIGHT, FORMAT[1], FPS)
+        config.enable_stream(STREAM_TYPE[1], COLOR_WIDTH, COLOR_HEIGHT, FORMAT[1], FPS)
 
     # Start streaming with requested config
     profile = pipe.start(config)
@@ -542,10 +548,10 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
         self.fps = FPS
         self.duration = 1 / self.fps * Gst.SECOND
         self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
-                             'caps=video/x-raw,format=RGB,width=640,height=480,framerate={}/1 ' \
+                             'caps=video/x-raw,format=RGB,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
-                             '! rtph264pay config-interval=1 name=pay0 pt=96'.format(self.fps)
+                             '! rtph264pay config-interval=1 name=pay0 pt=96'.format(COLOR_WIDTH, COLOR_HEIGHT, self.fps)
 
     def on_need_data(self, src, length):
         global rtsp_streaming_img
@@ -583,6 +589,12 @@ class GstServer(GstRtspServer.RTSPServer):
 def GstLoop():
     loop = GLib.MainLoop()
     loop.run()
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(('8.8.8.8', 1))  # connect() for UDP doesn't send packets
+    local_ip_address = s.getsockname()[0]
+    return local_ip_address
 
 ######################################################
 ##  Main code starts here                           ##
@@ -622,7 +634,7 @@ vehicle.add_message_listener('ATTITUDE', att_msg_callback)
 # vehicle.add_message_listener('AHRS2', ahrs2_msg_callback)
 
 if RTSP_STREAMING_ENABLE is True:
-    send_msg_to_gcs('RTSP at rtsp://<ip-address>:' + RTSP_PORT + RTSP_MOUNT_POINT)
+    send_msg_to_gcs('RTSP at rtsp://' + get_local_ip() + '/' + RTSP_PORT + RTSP_MOUNT_POINT)
     Gst.init(None)
     server = GstServer()
     threading.Thread(target=GstLoop, args=()).start()
