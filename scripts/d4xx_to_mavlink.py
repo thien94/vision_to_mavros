@@ -13,7 +13,7 @@
 #   pip3 install dronekit
 #   pip3 install apscheduler
 #   pip3 install pyserial
-#   pip3 install numba
+#   pip3 install numba           # Only necessary if you want to optimize the performance. Require pip3 version >= 19 and llvmlite: pip3 install llvmlite==0.34.0
 #   pip3 install opencv-python
 #   sudo apt -y install python3-gst-1.0 gir1.2-gst-rtsp-server-1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-ugly libx264-dev
 # Only necessary if you installed the minimal version of Ubuntu:
@@ -41,7 +41,7 @@ from time import sleep
 from apscheduler.schedulers.background import BackgroundScheduler
 from dronekit import connect, VehicleMode
 from pymavlink import mavutil
-from numba import njit
+# from numba import njit
 
 # In order to import cv2 under python3 when you also have ROS Kinetic installed
 if os.path.exists("/opt/ros/kinetic/lib/python2.7/dist-packages"):
@@ -490,7 +490,7 @@ def find_obstacle_line_height():
 #
 # Note that we assume the input depth_mat is already processed by at least hole-filling filter.
 # Otherwise, the output array might not be stable from frame to frame.
-@njit
+# @njit   # Uncomment to optimize for performance. This uses numba which requires llmvlite (see instruction at the top)
 def distances_from_depth_image(obstacle_line_height, depth_mat, distances, min_depth_m, max_depth_m, obstacle_line_thickness_pixel):
     # Parameters for depth image
     depth_img_width  = depth_mat.shape[1]
