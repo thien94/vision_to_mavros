@@ -591,9 +591,13 @@ def GstLoop():
     loop.run()
 
 def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(('8.8.8.8', 1))  # connect() for UDP doesn't send packets
-    local_ip_address = s.getsockname()[0]
+    local_ip_address = "127.0.0.1"
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 1))  # connect() for UDP doesn't send packets
+        local_ip_address = s.getsockname()[0]
+    except:
+        local_ip_address = socket.gethostbyname(socket.gethostname())
     return local_ip_address
 
 ######################################################
