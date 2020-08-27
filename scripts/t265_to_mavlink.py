@@ -578,13 +578,19 @@ try:
                 # Check for pose jump and increment reset_counter
                 if prev_data != None:
                     delta_translation = [data.translation.x - prev_data.translation.x, data.translation.y - prev_data.translation.y, data.translation.z - prev_data.translation.z]
+                    delta_velocity = [data.velocity.x - prev_data.velocity.x, data.velocity.y - prev_data.velocity.y, data.velocity.z - prev_data.velocity.z]
                     position_displacement = np.linalg.norm(delta_translation)
+                    speed_delta = np.linalg.norm(delta_velocity)
 
                     # Pose jump is indicated when position changes abruptly. The behavior is not well documented yet (as of librealsense 2.34.0)
                     jump_threshold = 0.1 # in meters, from trials and errors, should be relative to how frequent is the position data obtained (200Hz for the T265)
-                    if (position_displacement > jump_threshold):
-                        send_msg_to_gcs('Pose jump detected')
-                        print("Position jumped by: ", position_displacement)
+                    jump_speed_threshold = 20.0 # in m/s from trials and errors, should be relative to how frequent is the velocity data obtained (200Hz for the T265)
+                    if (position_displacement > jump_threshold) or (speed_delta > jump_speed_threshold):
+                        send_msg_to_gcs('VISO jump detected')
+                        if position_displacement > jump_threshold:
+                            print("Position jumped by: ", position_displacement)
+                        elif speed_delta > jump_speed_threshold:
+                            print("Speed jumped by: ", speed_delta)
                         increment_reset_counter()
                     
                 prev_data = data
