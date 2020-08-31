@@ -638,7 +638,7 @@ vehicle.add_message_listener('ATTITUDE', att_msg_callback)
 # vehicle.add_message_listener('AHRS2', ahrs2_msg_callback)
 
 if RTSP_STREAMING_ENABLE is True:
-    send_msg_to_gcs('RTSP at rtsp://' + get_local_ip() + '/' + RTSP_PORT + RTSP_MOUNT_POINT)
+    send_msg_to_gcs('RTSP at rtsp://' + get_local_ip() + ':' + RTSP_PORT + RTSP_MOUNT_POINT)
     Gst.init(None)
     server = GstServer()
     threading.Thread(target=GstLoop, args=()).start()
