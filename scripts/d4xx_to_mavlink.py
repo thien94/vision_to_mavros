@@ -548,7 +548,7 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
         self.fps = FPS
         self.duration = 1 / self.fps * Gst.SECOND
         self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
-                             'caps=video/x-raw,format=RGB,width={},height={},framerate={}/1 ' \
+                             'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
                              '! rtph264pay config-interval=1 name=pay0 pt=96'.format(COLOR_WIDTH, COLOR_HEIGHT, self.fps)
