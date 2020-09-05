@@ -64,6 +64,9 @@ vision_speed_estimate_msg_hz_default = 30.0
 enable_update_tracking_confidence_to_gcs = True
 update_tracking_confidence_to_gcs_hz_default = 1.0
 
+# Monitor user's online input via keyboard, can only be used when runs from terminal
+enable_user_keyboard_input = True
+
 # Default global position for EKF home/ origin
 enable_auto_set_ekf_home = False
 home_lat = 151269321    # Somewhere random
@@ -518,9 +521,11 @@ if enable_update_tracking_confidence_to_gcs:
     update_tracking_confidence_to_gcs.prev_confidence_level = -1
 
 # A separate thread to monitor user input
-user_keyboard_input_thread = threading.Thread(target=user_input_monitor)
-user_keyboard_input_thread.daemon = True
-user_keyboard_input_thread.start()
+if enable_user_keyboard_input:
+    user_keyboard_input_thread = threading.Thread(target=user_input_monitor)
+    user_keyboard_input_thread.daemon = True
+    user_keyboard_input_thread.start()
+    print("INFO: Press Enter to set EKF home at default location")
 
 sched.start()
 
@@ -528,8 +533,6 @@ if compass_enabled == 1:
     time.sleep(1) # Wait a short while for yaw to be correctly initiated
 
 send_msg_to_gcs('Sending vision messages to FCU')
-
-print("INFO: Press Enter to set EKF home at default location")
 
 try:
     while True:
