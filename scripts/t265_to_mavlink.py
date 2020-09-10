@@ -321,7 +321,7 @@ def send_vision_speed_estimate_message():
 
 # Update the changes of confidence level on GCS and terminal
 def update_tracking_confidence_to_gcs():
-    if update_tracking_confidence_to_gcs.prev_confidence_level != data.tracker_confidence:
+    if data is not None and update_tracking_confidence_to_gcs.prev_confidence_level != data.tracker_confidence:
         confidence_status_string = 'Tracking confidence: ' + pose_data_confidence_level[data.tracker_confidence]
         send_msg_to_gcs(confidence_status_string)
         update_tracking_confidence_to_gcs.prev_confidence_level = data.tracker_confidence
@@ -403,9 +403,6 @@ def att_msg_callback(self, attr_name, value):
     if heading_north_yaw is None:
         heading_north_yaw = value.yaw
         print("INFO: Received first ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
-    else:
-        heading_north_yaw = value.yaw
-        print("INFO: Received ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
 
 def vehicle_connect():
     global vehicle, is_vehicle_connected
