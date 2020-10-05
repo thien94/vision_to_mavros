@@ -333,7 +333,7 @@ def vehicle_connect():
 
     if vehicle == None:
         try:
-            vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
+            vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1, source_component=93)
         except:
             progress('Connection error! Retrying...')
             sleep(1)
