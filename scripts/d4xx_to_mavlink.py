@@ -10,7 +10,7 @@
 # Install required packages: 
 #   pip3 install pyrealsense2
 #   pip3 install transformations
-#   pip3 install dronekit
+#   pip3 install pymavlink
 #   pip3 install apscheduler
 #   pip3 install pyserial
 #   pip3 install numba           # Only necessary if you want to optimize the performance. Require pip3 version >= 19 and llvmlite: pip3 install llvmlite==0.34.0
@@ -33,13 +33,13 @@ import pyrealsense2 as rs
 import numpy as np
 import transformations as tf
 import math as m
+import sys
 import time
 import argparse
 import threading
 import json
 from time import sleep
 from apscheduler.schedulers.background import BackgroundScheduler
-from dronekit import connect, VehicleMode
 from pymavlink import mavutil
 # from numba import njit
 
@@ -129,6 +129,8 @@ obstacle_distance_msg_hz_default = 15.0
 # lock for thread synchronization
 lock = threading.Lock()
 
+mavlink_lock = threading.Lock()
+
 debug_enable_default = 0
 
 ######################################################
@@ -136,7 +138,6 @@ debug_enable_default = 0
 ######################################################
 
 # FCU connection variables
-vehicle = None
 is_vehicle_connected = False
 vehicle_pitch_rad = None
 
@@ -185,39 +186,43 @@ connection_baudrate = args.baudrate
 obstacle_distance_msg_hz = args.obstacle_distance_msg_hz
 debug_enable = args.debug_enable
 
+def progress(string):
+    print(string, file=sys.stdout)
+    sys.stdout.flush()
+
 # Using default values if no specified inputs
 if not connection_string:
     connection_string = connection_string_default
-    print("INFO: Using default connection_string", connection_string)
+    progress("INFO: Using default connection_string %s" % connection_string)
 else:
-    print("INFO: Using connection_string", connection_string)
+    progress("INFO: Using connection_string %s" % connection_string)
 
 if not connection_baudrate:
     connection_baudrate = connection_baudrate_default
-    print("INFO: Using default connection_baudrate", connection_baudrate)
+    progress("INFO: Using default connection_baudrate %s" % connection_baudrate)
 else:
-    print("INFO: Using connection_baudrate", connection_baudrate)
+    progress("INFO: Using connection_baudrate %s" % connection_baudrate)
     
 if not obstacle_distance_msg_hz:
     obstacle_distance_msg_hz = obstacle_distance_msg_hz_default
-    print("INFO: Using default obstacle_distance_msg_hz", obstacle_distance_msg_hz)
+    progress("INFO: Using default obstacle_distance_msg_hz %s" % obstacle_distance_msg_hz)
 else:
-    print("INFO: Using obstacle_distance_msg_hz", obstacle_distance_msg_hz)
+    progress("INFO: Using obstacle_distance_msg_hz %s" % obstacle_distance_msg_hz)
 
 # The list of filters to be applied on the depth image
 for i in range(len(filters)):
     if filters[i][0] is True:
-        print("INFO: Applying: ", filters[i][1])
+        progress("INFO: Applying: %s" % filters[i][1])
     else:
-        print("INFO: NOT applying: ", filters[i][1])
+        progress("INFO: NOT applying: %s" % filters[i][1])
 
 if not debug_enable:
     debug_enable = debug_enable_default
 
 if debug_enable == 1:
-    print("INFO: Debugging option enabled")
+    progress("INFO: Debugging option enabled")
 else:
-    print("INFO: Debugging option DISABLED")
+    progress("INFO: Debugging option DISABLED")
 
 ######################################################
 ##  Functions - MAVLink                             ##
@@ -227,7 +232,7 @@ else:
 def send_obstacle_distance_message():
     global current_time_us, distances, camera_facing_angle_degree
     if angle_offset is None or increment_f is None:
-        print("Please call set_obstacle_distance_params before continue")
+        progress("Please call set_obstacle_distance_params before continue")
     else:
         msg = vehicle.message_factory.obstacle_distance_encode(
             current_time_us,    # us Timestamp (UNIX time or time since system boot)
@@ -292,9 +297,9 @@ def send_msg_to_gcs(text_to_be_sent):
         )
         vehicle.send_mavlink(status_msg)
         vehicle.flush()
-        print("INFO: " + text_to_be_sent)
+        progress("INFO: %s" % text_to_be_sent)
     else:
-        print("INFO: Vehicle not connected. Cannot send text message to Ground Control Station (GCS)")
+        progress("INFO: Vehicle not connected. Cannot send text message to Ground Control Station (GCS)")
 
 # Request a timesync update from the flight controller, for future work.
 # TODO: Inspect the usage of timesync_update 
@@ -313,14 +318,14 @@ def att_msg_callback(self, attr_name, value):
     global vehicle_pitch_rad
     vehicle_pitch_rad = value.pitch
     if debug_enable == 1:
-        print("INFO: Received ATTITUDE msg, current pitch is %.2f" % m.degrees(vehicle_pitch_rad), "degrees")
+        progress("INFO: Received ATTITUDE msg, current pitch is %.2f" % (m.degrees(vehicle_pitch_rad), "degrees"))
 
 # Listen to AHRS2 data: https://mavlink.io/en/messages/ardupilotmega.html#AHRS2
 def ahrs2_msg_callback(self, attr_name, value):
     global vehicle_pitch_rad
     vehicle_pitch_rad = value.pitch
     if debug_enable == 1:
-        print("INFO: Received AHRS2 msg, current pitch is %.2f" % m.degrees(vehicle_pitch_rad), "degrees")
+        progress("INFO: Received AHRS2 msg, current pitch is %.2f degrees" % (m.degrees(vehicle_pitch_rad)))
 
 # Establish connection to the FCU
 def vehicle_connect():
@@ -330,7 +335,7 @@ def vehicle_connect():
         try:
             vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
         except:
-            print('Connection error! Retrying...')
+            progress('Connection error! Retrying...')
             sleep(1)
 
     if vehicle == None:
@@ -353,36 +358,36 @@ def find_device_that_supports_advanced_mode() :
     for dev in devices:
         if dev.supports(rs.camera_info.product_id) and str(dev.get_info(rs.camera_info.product_id)) in DS5_product_ids:
             if dev.supports(rs.camera_info.name):
-                print("INFO: Found device that supports advanced mode:", dev.get_info(rs.camera_info.name))
+                progress("INFO: Found device that supports advanced mode: %s" % dev.get_info(rs.camera_info.name))
             return dev
     raise Exception("No device that supports advanced mode was found")
 
 # Loop until we successfully enable advanced mode
 def realsense_enable_advanced_mode(advnc_mode):
     while not advnc_mode.is_enabled():
-        print("INFO: Trying to enable advanced mode...")
+        progress("INFO: Trying to enable advanced mode...")
         advnc_mode.toggle_advanced_mode(True)
         # At this point the device will disconnect and re-connect.
-        print("INFO: Sleeping for 5 seconds...")
+        progress("INFO: Sleeping for 5 seconds...")
         time.sleep(5)
         # The 'dev' object will become invalid and we need to initialize it again
         dev = find_device_that_supports_advanced_mode()
         advnc_mode = rs.rs400_advanced_mode(dev)
-        print("INFO: Advanced mode is", "enabled" if advnc_mode.is_enabled() else "disabled")
+        progress("INFO: Advanced mode is %s" "enabled" if advnc_mode.is_enabled() else "disabled")
 
 # Load the settings stored in the JSON file
 def realsense_load_settings_file(advnc_mode, setting_file):
     # Sanity checks
     if os.path.isfile(setting_file):
-        print("INFO: Setting file found", setting_file)
+        progress("INFO: Setting file found %s" % setting_file)
     else:
-        print("INFO: Cannot find setting file ", setting_file)
+        progress("INFO: Cannot find setting file %s" % setting_file)
         exit()
 
     if advnc_mode.is_enabled():
-        print("INFO: Advanced mode is enabled")
+        progress("INFO: Advanced mode is enabled")
     else:
-        print("INFO: Device does not support advanced mode")
+        progress("INFO: Device does not support advanced mode")
         exit()
     
     # Input for load_json() is the content of the json file, not the file path
@@ -409,7 +414,7 @@ def realsense_connect():
     # Getting the depth sensor's depth scale (see rs-align example for explanation)
     depth_sensor = profile.get_device().first_depth_sensor()
     depth_scale = depth_sensor.get_depth_scale()
-    print("INFO: Depth scale is: ", depth_scale)
+    progress("INFO: Depth scale is: %s" % depth_scale)
 
 def realsense_configure_setting(setting_file):
     device = find_device_that_supports_advanced_mode()
@@ -424,7 +429,7 @@ def set_obstacle_distance_params():
     # Obtain the intrinsics from the camera itself
     profiles = pipe.get_active_profile()
     depth_intrinsics = profiles.get_stream(STREAM_TYPE[0]).as_video_stream_profile().intrinsics
-    print("INFO: Depth camera intrinsics: ", depth_intrinsics)
+    progress("INFO: Depth camera intrinsics: %s" % depth_intrinsics)
     
     # For forward facing camera with a horizontal wide view:
     #   HFOV=2*atan[w/(2.fx)],
@@ -433,22 +438,23 @@ def set_obstacle_distance_params():
     #   Diag=sqrt(w^2 + h^2)
     depth_hfov_deg = m.degrees(2 * m.atan(DEPTH_WIDTH / (2 * depth_intrinsics.fx)))
     depth_vfov_deg = m.degrees(2 * m.atan(DEPTH_HEIGHT / (2 * depth_intrinsics.fy)))
-    print("INFO: Depth camera HFOV: %0.2f degrees" % depth_hfov_deg)
-    print("INFO: Depth camera VFOV: %0.2f degrees" % depth_vfov_deg)
+    progress("INFO: Depth camera HFOV: %0.2f degrees" % depth_hfov_deg)
+    progress("INFO: Depth camera VFOV: %0.2f degrees" % depth_vfov_deg)
 
     angle_offset = camera_facing_angle_degree - (depth_hfov_deg / 2)
     increment_f = depth_hfov_deg / distances_array_length
-    print("INFO: OBSTACLE_DISTANCE angle_offset: %0.3f" % angle_offset)
-    print("INFO: OBSTACLE_DISTANCE increment_f: %0.3f" % increment_f)
-    print("INFO: OBSTACLE_DISTANCE coverage: from %0.3f" % (angle_offset), "to %0.3f degrees" % (angle_offset + increment_f * distances_array_length))
+    progress("INFO: OBSTACLE_DISTANCE angle_offset: %0.3f" % angle_offset)
+    progress("INFO: OBSTACLE_DISTANCE increment_f: %0.3f" % increment_f)
+    progress("INFO: OBSTACLE_DISTANCE coverage: from %0.3f to %0.3f degrees" %
+        (angle_offset, angle_offset + increment_f * distances_array_length))
 
     # Sanity check for depth configuration
     if obstacle_line_height_ratio < 0 or obstacle_line_height_ratio > 1:
-        print("Please make sure the horizontal position is within [0-1]: ", obstacle_line_height_ratio)
+        progress("Please make sure the horizontal position is within [0-1]: %s"  % obstacle_line_height_ratio)
         sys.exit()
 
     if obstacle_line_thickness_pixel < 1 or obstacle_line_thickness_pixel > DEPTH_HEIGHT:
-        print("Please make sure the thickness is within [0-DEPTH_HEIGHT]: ", obstacle_line_thickness_pixel)
+        progress("Please make sure the thickness is within [0-DEPTH_HEIGHT]: %s" % obstacle_line_thickness_pixel)
         sys.exit()
 
 # Find the height of the horizontal line to calculate the obstacle distances
@@ -567,7 +573,7 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
             self.number_frames += 1
             retval = src.emit('push-buffer', buf)
             if retval != Gst.FlowReturn.OK:
-                print(retval)
+                progress(retval)
 
     def do_create_element(self, url):
         return Gst.parse_launch(self.launch_string)
@@ -604,10 +610,10 @@ def get_local_ip():
 ##  Main code starts here                           ##
 ######################################################
 
-print("INFO: Connecting to vehicle.")
+progress("INFO: Starting MAVLink thread")
 while (not vehicle_connect()):
     pass
-print("INFO: Vehicle connected.")
+progress("INFO: Vehicle connected.")
 
 send_msg_to_gcs('Connecting to camera...')
 if USE_PRESET_FILE:
@@ -630,7 +636,7 @@ else:
     send_msg_to_gcs('Nothing to do. Check params to enable something')
     pipe.stop()
     vehicle.close()
-    print("INFO: Realsense pipe and vehicle object closed.")
+    progress("INFO: Realsense pipe and vehicle object closed.")
     sys.exit()
 
 # Listen and extract necessary attitude's data
@@ -711,7 +717,7 @@ try:
             cv2.waitKey(1)
 
             # Print all the distances in a line
-            # print(*distances)
+            progress("%s" % (str(distances)))
             
             last_time = time.time()
 
@@ -719,7 +725,7 @@ except KeyboardInterrupt:
     send_msg_to_gcs('Closing the script...')  
 
 except Exception as e:
-    print(e)
+    progress(e)
     pass
 
 except:
@@ -728,5 +734,5 @@ except:
 finally:
     pipe.stop()
     vehicle.close()
-    print("INFO: Realsense pipe and vehicle object closed.")
+    progress("INFO: Realsense pipe and vehicle object closed.")
     sys.exit()
