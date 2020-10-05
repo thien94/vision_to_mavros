@@ -129,7 +129,7 @@ obstacle_distance_msg_hz_default = 15.0
 # lock for thread synchronization
 lock = threading.Lock()
 
-mavlink_lock = threading.Lock()
+mavlink_thread_should_exit = False
 
 debug_enable_default = 0
 
@@ -138,7 +138,6 @@ debug_enable_default = 0
 ######################################################
 
 # FCU connection variables
-is_vehicle_connected = False
 vehicle_pitch_rad = None
 
 # Camera-related variables
@@ -228,13 +227,32 @@ else:
 ##  Functions - MAVLink                             ##
 ######################################################
 
+def mavlink_loop(conn, callbacks):
+    '''a main routine for a thread; reads data from a mavlink connection,
+    calling callbacks based on message type received.
+    '''
+    interesting_messages = list(callbacks.keys())
+    while not mavlink_thread_should_exit:
+        # send a heartbeat msg
+        conn.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+                                mavutil.mavlink.MAV_AUTOPILOT_GENERIC,
+                                0,
+                                0,
+                                0)
+        m = conn.recv_match(type=interesting_messages, timeout=1, blocking=True)
+        if m is None:
+            continue
+        callbacks[m.get_type()](m)
+
+
+
 # https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
 def send_obstacle_distance_message():
     global current_time_us, distances, camera_facing_angle_degree
     if angle_offset is None or increment_f is None:
         progress("Please call set_obstacle_distance_params before continue")
     else:
-        msg = vehicle.message_factory.obstacle_distance_encode(
+        conn.mav.obstacle_distance_send(
             current_time_us,    # us Timestamp (UNIX time or time since system boot)
             0,                  # sensor_type, defined here: https://mavlink.io/en/messages/common.html#MAV_DISTANCE_SENSOR
             distances,          # distances,    uint16_t[72],   cm
@@ -246,13 +264,10 @@ def send_obstacle_distance_message():
             12                  # MAV_FRAME, vehicle-front aligned: https://mavlink.io/en/messages/common.html#MAV_FRAME_BODY_FRD    
         )
 
-        vehicle.send_mavlink(msg)
-        vehicle.flush()
-
 # https://mavlink.io/en/messages/common.html#DISTANCE_SENSOR
 def send_single_distance_sensor_msg(distance, orientation):
     # Average out a portion of the centermost part
-    msg = vehicle.message_factory.distance_sensor_encode(
+    conn.mav.distance_sensor_send(
         0,                  # ms Timestamp (UNIX time or time since system boot) (ignored)
         min_depth_cm,       # min_distance, uint16_t, cm
         max_depth_cm,       # min_distance, uint16_t, cm
@@ -263,15 +278,12 @@ def send_single_distance_sensor_msg(distance, orientation):
         0                   # covariance : 0 (ignored)
     )
 
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
-
 # https://mavlink.io/en/messages/common.html#DISTANCE_SENSOR
 def send_distance_sensor_message():
     global distances
     # Average out a portion of the centermost part
     curr_dist = int(np.mean(distances[33:38]))
-    msg = vehicle.message_factory.distance_sensor_encode(
+    conn.mav.distance_sensor_send(
         0,# ms Timestamp (UNIX time or time since system boot) (ignored)
         min_depth_cm,   # min_distance, uint16_t, cm
         max_depth_cm,   # min_distance, uint16_t, cm
@@ -282,68 +294,32 @@ def send_distance_sensor_message():
         0               # covariance : 0 (ignored)
     )
 
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
-
 def send_msg_to_gcs(text_to_be_sent):
     # MAV_SEVERITY: 0=EMERGENCY 1=ALERT 2=CRITICAL 3=ERROR, 4=WARNING, 5=NOTICE, 6=INFO, 7=DEBUG, 8=ENUM_END
-    # Defined here: https://mavlink.io/en/messages/common.html#MAV_SEVERITY
-    # MAV_SEVERITY = 3 will let the message be displayed on Mission Planner HUD, but 6 is ok for QGroundControl
-    if is_vehicle_connected == True:
-        text_msg = 'D4xx: ' + text_to_be_sent
-        status_msg = vehicle.message_factory.statustext_encode(
-            6,                      # MAV_SEVERITY
-            text_msg.encode()	    # max size is char[50]       
-        )
-        vehicle.send_mavlink(status_msg)
-        vehicle.flush()
-        progress("INFO: %s" % text_to_be_sent)
-    else:
-        progress("INFO: Vehicle not connected. Cannot send text message to Ground Control Station (GCS)")
+    text_msg = 'D4xx: ' + text_to_be_sent
+    conn.mav.statustext_send(mavutil.mavlink.MAV_SEVERITY_INFO, text_msg.encode())
+    progress("INFO: %s" % text_to_be_sent)
 
 # Request a timesync update from the flight controller, for future work.
 # TODO: Inspect the usage of timesync_update 
 def update_timesync(ts=0, tc=0):
     if ts == 0:
         ts = int(round(time.time() * 1000))
-    msg = vehicle.message_factory.timesync_encode(
-        tc,     # tc1
-        ts      # ts1
-    )
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
+    conn.mav.timesync_send(tc, ts)
 
 # Listen to ATTITUDE data: https://mavlink.io/en/messages/common.html#ATTITUDE
-def att_msg_callback(self, attr_name, value):
+def att_msg_callback(value):
     global vehicle_pitch_rad
     vehicle_pitch_rad = value.pitch
     if debug_enable == 1:
-        progress("INFO: Received ATTITUDE msg, current pitch is %.2f" % (m.degrees(vehicle_pitch_rad), "degrees"))
+        progress("INFO: Received ATTITUDE msg, current pitch is %.2f degrees" % (m.degrees(vehicle_pitch_rad),))
 
 # Listen to AHRS2 data: https://mavlink.io/en/messages/ardupilotmega.html#AHRS2
-def ahrs2_msg_callback(self, attr_name, value):
+def ahrs2_msg_callback(value):
     global vehicle_pitch_rad
     vehicle_pitch_rad = value.pitch
     if debug_enable == 1:
         progress("INFO: Received AHRS2 msg, current pitch is %.2f degrees" % (m.degrees(vehicle_pitch_rad)))
-
-# Establish connection to the FCU
-def vehicle_connect():
-    global vehicle, is_vehicle_connected
-
-    if vehicle == None:
-        try:
-            vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1, source_component=93)
-        except:
-            progress('Connection error! Retrying...')
-            sleep(1)
-
-    if vehicle == None:
-        is_vehicle_connected = False
-        return False
-    else:
-        is_vehicle_connected = True
-        return True
 
 ######################################################
 ##  Functions - D4xx cameras                        ##
@@ -606,14 +582,27 @@ def get_local_ip():
         local_ip_address = socket.gethostbyname(socket.gethostname())
     return local_ip_address
 
+
+
+
 ######################################################
 ##  Main code starts here                           ##
 ######################################################
 
-progress("INFO: Starting MAVLink thread")
-while (not vehicle_connect()):
-    pass
-progress("INFO: Vehicle connected.")
+progress("INFO: Starting Vehicle communications")
+conn = mavutil.mavlink_connection(
+    connection_string,
+    autoreconnect = True,
+    source_system = 1,
+    source_component = 93,
+    baud=connection_baudrate,
+    force_connected=True,
+)
+mavlink_callbacks = {
+    'ATTITUDE': att_msg_callback,
+}
+mavlink_thread = threading.Thread(target=mavlink_loop, args=(conn, mavlink_callbacks))
+mavlink_thread.start()
 
 send_msg_to_gcs('Connecting to camera...')
 if USE_PRESET_FILE:
@@ -635,13 +624,9 @@ elif enable_msg_distance_sensor:
 else:
     send_msg_to_gcs('Nothing to do. Check params to enable something')
     pipe.stop()
-    vehicle.close()
+    conn.mav.close()
     progress("INFO: Realsense pipe and vehicle object closed.")
     sys.exit()
-
-# Listen and extract necessary attitude's data
-vehicle.add_message_listener('ATTITUDE', att_msg_callback)
-# vehicle.add_message_listener('AHRS2', ahrs2_msg_callback)
 
 if RTSP_STREAMING_ENABLE is True:
     send_msg_to_gcs('RTSP at rtsp://' + get_local_ip() + ':' + RTSP_PORT + RTSP_MOUNT_POINT)
@@ -733,6 +718,8 @@ except:
 
 finally:
     pipe.stop()
-    vehicle.close()
+    mavlink_thread_should_exit = True
+    mavlink_thread.join()
+    conn.close()
     progress("INFO: Realsense pipe and vehicle object closed.")
     sys.exit()
