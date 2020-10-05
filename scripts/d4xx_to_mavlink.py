@@ -33,6 +33,7 @@ import pyrealsense2 as rs
 import numpy as np
 import transformations as tf
 import math as m
+import signal
 import sys
 import time
 import argparse
@@ -574,10 +575,6 @@ class GstServer(GstRtspServer.RTSPServer):
         self.get_mount_points().add_factory(RTSP_MOUNT_POINT, factory)
         self.attach(None)
 
-def GstLoop():
-    loop = GLib.MainLoop()
-    loop.run()
-
 def get_local_ip():
     local_ip_address = "127.0.0.1"
     try:
@@ -640,20 +637,30 @@ else:
     progress("INFO: Realsense pipe and vehicle object closed.")
     sys.exit()
 
+glib_loop = None
 if RTSP_STREAMING_ENABLE is True:
     send_msg_to_gcs('RTSP at rtsp://' + get_local_ip() + ':' + RTSP_PORT + RTSP_MOUNT_POINT)
     Gst.init(None)
     server = GstServer()
-    threading.Thread(target=GstLoop, args=()).start()
+    glib_loop = GLib.MainLoop()
+    glib_thread = threading.Thread(target=glib_loop.run, args=())
+    glib_thread.start()
 else:
     send_msg_to_gcs('RTSP not streaming')
 
 sched.start()
 
+main_loop_should_quit = False
+def sigint_handler(sig, frame):
+    global main_loop_should_quit
+    main_loop_should_quit = True
+
+signal.signal(signal.SIGINT, sigint_handler)
+
 # Begin of the main loop
 last_time = time.time()
 try:
-    while True:
+    while not main_loop_should_quit:
         # This call waits until a new coherent set of frames is available on a device
         # Calls to get_frame_data(...) and get_frame_timestamp(...) on a device will return stable values until wait_for_frames(...) is called
         frames = pipe.wait_for_frames()
@@ -718,9 +725,6 @@ try:
             
             last_time = time.time()
 
-except KeyboardInterrupt:
-    send_msg_to_gcs('Closing the script...')  
-
 except Exception as e:
     progress(e)
     pass
@@ -729,6 +733,12 @@ except:
     send_msg_to_gcs('ERROR: Depth camera disconnected')  
 
 finally:
+    progress('Closing the script...')
+    # start a timer in case stopping everything nicely doesn't work.
+    signal.setitimer(signal.ITIMER_REAL, 5)  # seconds...
+    if glib_loop is not None:
+        glib_loop.quit()
+        glib_thread.join()
     pipe.stop()
     mavlink_thread_should_exit = True
     mavlink_thread.join()
