@@ -154,6 +154,7 @@ rtsp_streaming_img = None
 # Data variables
 data = None
 current_time_us = 0
+last_obstacle_distance_sent_ms = 0  # value of current_time_us when obstacle_distance last sent
 
 # Obstacle distances in front of the sensor, starting from the left in increment degrees to the right
 # See here: https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
@@ -249,6 +250,11 @@ def mavlink_loop(conn, callbacks):
 # https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE
 def send_obstacle_distance_message():
     global current_time_us, distances, camera_facing_angle_degree
+    global last_obstacle_distance_sent_ms
+    if current_time_us == last_obstacle_distance_sent_ms:
+        # no new frame
+        return
+    last_obstacle_distance_sent_ms = current_time_us
     if angle_offset is None or increment_f is None:
         progress("Please call set_obstacle_distance_params before continue")
     else:
