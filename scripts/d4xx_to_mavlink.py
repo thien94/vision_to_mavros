@@ -613,11 +613,21 @@ mavlink_callbacks = {
 mavlink_thread = threading.Thread(target=mavlink_loop, args=(conn, mavlink_callbacks))
 mavlink_thread.start()
 
+# connecting and configuring the camera is a little hit-and-miss.
+# Start a timer and rely on a restart of the script to get it working.
+# Configuring the camera appears to block all threads, so we can't do
+# this internally.
+
+# send_msg_to_gcs('Setting timer...')
+signal.setitimer(signal.ITIMER_REAL, 5)  # seconds...
+
 send_msg_to_gcs('Connecting to camera...')
 if USE_PRESET_FILE:
     realsense_configure_setting(PRESET_FILE)
 realsense_connect()
 send_msg_to_gcs('Camera connected.')
+
+signal.setitimer(signal.ITIMER_REAL, 0)  # cancel alarm
 
 set_obstacle_distance_params()
 
