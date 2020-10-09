@@ -31,7 +31,6 @@ os.environ["MAVLINK20"] = "1"
 # Import the libraries
 import pyrealsense2 as rs
 import numpy as np
-import transformations as tf
 import math as m
 import signal
 import sys
