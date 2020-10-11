@@ -133,6 +133,10 @@ mavlink_thread_should_exit = False
 
 debug_enable_default = 0
 
+# default exit code is failure - a graceful termination with a
+# terminate signal is possible.
+exit_code = 1
+
 ######################################################
 ##  Global variables                                ##
 ######################################################
@@ -659,12 +663,23 @@ else:
 
 sched.start()
 
+# gracefully terminate the script if an interrupt signal (e.g. ctrl-c)
+# is received.  This is considered to be abnormal termination.
 main_loop_should_quit = False
 def sigint_handler(sig, frame):
     global main_loop_should_quit
     main_loop_should_quit = True
-
 signal.signal(signal.SIGINT, sigint_handler)
+
+# gracefully terminate the script if a terminate signal is received
+# (e.g. kill -TERM).  
+def sigterm_handler(sig, frame):
+    global main_loop_should_quit
+    main_loop_should_quit = True
+    global exit_code
+    exit_code = 0
+
+signal.signal(signal.SIGTERM, sigterm_handler)
 
 # Begin of the main loop
 last_time = time.time()
@@ -736,7 +751,6 @@ try:
 
 except Exception as e:
     progress(e)
-    pass
 
 except:
     send_msg_to_gcs('ERROR: Depth camera disconnected')  
@@ -753,4 +767,4 @@ finally:
     mavlink_thread.join()
     conn.close()
     progress("INFO: Realsense pipe and vehicle object closed.")
-    sys.exit()
+    sys.exit(exit_code)
