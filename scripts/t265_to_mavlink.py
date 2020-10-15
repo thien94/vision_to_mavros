@@ -32,6 +32,13 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from dronekit import connect, VehicleMode
 from pymavlink import mavutil
 
+
+# Replacement of the standard print() function to flush the output
+def progress(string):
+    print(string, file=sys.stdout)
+    sys.stdout.flush()
+
+
 #######################################
 # Parameters
 #######################################
@@ -156,57 +163,57 @@ debug_enable = args.debug_enable
 # Using default values if no specified inputs
 if not connection_string:
     connection_string = connection_string_default
-    print("INFO: Using default connection_string", connection_string)
+    progress("INFO: Using default connection_string %s" % connection_string)
 else:
-    print("INFO: Using connection_string", connection_string)
+    progress("INFO: Using connection_string %s" % connection_string)
 
 if not connection_baudrate:
     connection_baudrate = connection_baudrate_default
-    print("INFO: Using default connection_baudrate", connection_baudrate)
+    progress("INFO: Using default connection_baudrate %s" % connection_baudrate)
 else:
-    print("INFO: Using connection_baudrate", connection_baudrate)
+    progress("INFO: Using connection_baudrate %s" % connection_baudrate)
 
 if not vision_position_estimate_msg_hz:
     vision_position_estimate_msg_hz = vision_position_estimate_msg_hz_default
-    print("INFO: Using default vision_position_estimate_msg_hz", vision_position_estimate_msg_hz)
+    progress("INFO: Using default vision_position_estimate_msg_hz %s" % vision_position_estimate_msg_hz)
 else:
-    print("INFO: Using vision_position_estimate_msg_hz", vision_position_estimate_msg_hz)
+    progress("INFO: Using vision_position_estimate_msg_hz %s" % vision_position_estimate_msg_hz)
     
 if not vision_position_delta_msg_hz:
     vision_position_delta_msg_hz = vision_position_delta_msg_hz_default
-    print("INFO: Using default vision_position_delta_msg_hz", vision_position_delta_msg_hz)
+    progress("INFO: Using default vision_position_delta_msg_hz %s" % vision_position_delta_msg_hz)
 else:
-    print("INFO: Using vision_position_delta_msg_hz", vision_position_delta_msg_hz)
+    progress("INFO: Using vision_position_delta_msg_hz %s" % vision_position_delta_msg_hz)
 
 if not vision_speed_estimate_msg_hz:
     vision_speed_estimate_msg_hz = vision_speed_estimate_msg_hz_default
-    print("INFO: Using default vision_speed_estimate_msg_hz", vision_speed_estimate_msg_hz)
+    progress("INFO: Using default vision_speed_estimate_msg_hz %s" % vision_speed_estimate_msg_hz)
 else:
-    print("INFO: Using vision_speed_estimate_msg_hz", vision_speed_estimate_msg_hz)
+    progress("INFO: Using vision_speed_estimate_msg_hz %s" % vision_speed_estimate_msg_hz)
 
 if body_offset_enabled == 1:
-    print("INFO: Using camera position offset: Enabled, x y z is", body_offset_x, body_offset_y, body_offset_z)
+    progress("INFO: Using camera position offset: Enabled, x y z is %s %s %s" % (body_offset_x, body_offset_y, body_offset_z))
 else:
-    print("INFO: Using camera position offset: Disabled")
+    progress("INFO: Using camera position offset: Disabled")
 
 if compass_enabled == 1:
-    print("INFO: Using compass: Enabled. Heading will be aligned to north.")
+    progress("INFO: Using compass: Enabled. Heading will be aligned to north.")
 else:
-    print("INFO: Using compass: Disabled")
+    progress("INFO: Using compass: Disabled")
 
 if scale_calib_enable == True:
-    print("\nINFO: SCALE CALIBRATION PROCESS. DO NOT RUN DURING FLIGHT.\nINFO: TYPE IN NEW SCALE IN FLOATING POINT FORMAT\n")
+    progress("\nINFO: SCALE CALIBRATION PROCESS. DO NOT RUN DURING FLIGHT.\nINFO: TYPE IN NEW SCALE IN FLOATING POINT FORMAT\n")
 else:
     if scale_factor == 1.0:
-        print("INFO: Using default scale factor", scale_factor)
+        progress("INFO: Using default scale factor %s" % scale_factor)
     else:
-        print("INFO: Using scale factor", scale_factor)
+        progress("INFO: Using scale factor %s" % scale_factor)
 
 if not camera_orientation:
     camera_orientation = camera_orientation_default
-    print("INFO: Using default camera orientation", camera_orientation)
+    progress("INFO: Using default camera orientation %s" % camera_orientation)
 else:
-    print("INFO: Using camera orientation", camera_orientation)
+    progress("INFO: Using camera orientation %s" % camera_orientation)
 
 if camera_orientation == 0:     # Forward, USB port to the right
     H_aeroRef_T265Ref   = np.array([[0,0,-1,0],[1,0,0,0],[0,-1,0,0],[0,0,0,1]])
@@ -226,7 +233,7 @@ if not debug_enable:
 else:
     debug_enable = 1
     np.set_printoptions(precision=4, suppress=True) # Format output on terminal 
-    print("INFO: Debug messages enabled.")
+    progress("INFO: Debug messages enabled.")
 
 
 #######################################
@@ -339,9 +346,9 @@ def send_msg_to_gcs(text_to_be_sent):
         )
         vehicle.send_mavlink(status_msg)
         vehicle.flush()
-        print("INFO: " + text_to_be_sent)
+        progress("INFO: " + text_to_be_sent)
     else:
-        print("INFO: Vehicle not connected. Cannot send text message to Ground Control Station (GCS)")
+        progress("INFO: Vehicle not connected. Cannot send text message to Ground Control Station (GCS)")
 
 # Send a mavlink SET_GPS_GLOBAL_ORIGIN message (http://mavlink.org/messages/common#SET_GPS_GLOBAL_ORIGIN), which allows us to use local position information without a GPS.
 def set_default_global_origin():
@@ -402,7 +409,7 @@ def att_msg_callback(self, attr_name, value):
     global heading_north_yaw
     if heading_north_yaw is None:
         heading_north_yaw = value.yaw
-        print("INFO: Received first ATTITUDE message with heading yaw", heading_north_yaw * 180 / m.pi, "degrees")
+        progress("INFO: Received first ATTITUDE message with heading yaw" + str(heading_north_yaw * 180 / m.pi) +  "degrees")
 
 def vehicle_connect():
     global vehicle, is_vehicle_connected
@@ -410,7 +417,7 @@ def vehicle_connect():
     try:
         vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
     except:
-        print('Connection error! Retrying...')
+        progress('Connection error! Retrying...')
         sleep(1)
 
     if vehicle == None:
@@ -429,7 +436,7 @@ def increment_reset_counter():
 # List of notification events: https://github.com/IntelRealSense/librealsense/blob/development/include/librealsense2/h/rs_types.h
 # List of notification API: https://github.com/IntelRealSense/librealsense/blob/development/common/notifications.cpp
 def realsense_notification_callback(notif):
-    print("INFO: T265 event: " + notif)
+    progress("INFO: T265 event: " + notif)
     if notif.get_category() is rs.notification_category.pose_relocalization:
         increment_reset_counter()
         send_msg_to_gcs('Relocalization detected')
@@ -461,7 +468,7 @@ def user_input_monitor():
         # Special case: updating scale
         if scale_calib_enable == True:
             scale_factor = float(input("INFO: Type in new scale as float number\n"))
-            print("INFO: New scale is ", scale_factor)
+            progress("INFO: New scale is %s" % scale_factor)
 
         if enable_auto_set_ekf_home:
             send_msg_to_gcs('Set EKF home with default GPS location')
@@ -478,7 +485,7 @@ def user_input_monitor():
                 set_default_global_origin()
                 set_default_home_position()
             else:
-                print("Got keyboard input", c)
+                progress("Got keyboard input %s" % c)
         except IOError: pass
 
 
@@ -486,10 +493,10 @@ def user_input_monitor():
 # Main code starts here
 #######################################
 
-print("INFO: Connecting to vehicle.")
+progress("INFO: Connecting to vehicle.")
 while (not vehicle_connect()):
     pass
-print("INFO: Vehicle connected.")
+progress("INFO: Vehicle connected.")
 
 send_msg_to_gcs('Connecting to camera...')
 realsense_connect()
@@ -522,7 +529,7 @@ if enable_user_keyboard_input:
     user_keyboard_input_thread = threading.Thread(target=user_input_monitor)
     user_keyboard_input_thread.daemon = True
     user_keyboard_input_thread.start()
-    print("INFO: Press Enter to set EKF home at default location")
+    progress("INFO: Press Enter to set EKF home at default location")
 
 sched.start()
 
@@ -536,8 +543,8 @@ try:
         # Monitor last_heartbeat to reconnect in case of lost connection
         if vehicle.last_heartbeat > connection_timeout_sec_default:
             is_vehicle_connected = False
-            print("WARNING: CONNECTION LOST. Last hearbeat was %f sec ago."% vehicle.last_heartbeat)
-            print("WARNING: Attempting to reconnect ...")
+            progress("WARNING: CONNECTION LOST. Last hearbeat was %f sec ago."% vehicle.last_heartbeat)
+            progress("WARNING: Attempting to reconnect ...")
             vehicle_connect()
             continue
         
@@ -588,9 +595,9 @@ try:
                     if (position_displacement > jump_threshold) or (speed_delta > jump_speed_threshold):
                         send_msg_to_gcs('VISO jump detected')
                         if position_displacement > jump_threshold:
-                            print("Position jumped by: ", position_displacement)
+                            progress("Position jumped by: %s" % position_displacement)
                         elif speed_delta > jump_speed_threshold:
-                            print("Speed jumped by: ", speed_delta)
+                            progress("Speed jumped by: %s" % speed_delta)
                         increment_reset_counter()
                     
                 prev_data = data
@@ -611,20 +618,20 @@ try:
                 # Show debug messages here
                 if debug_enable == 1:
                     os.system('clear') # This helps in displaying the messages to be more readable
-                    print("DEBUG: Raw RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_T265Ref_T265body, 'sxyz')) * 180 / m.pi))
-                    print("DEBUG: NED RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_aeroRef_aeroBody, 'sxyz')) * 180 / m.pi))
-                    print("DEBUG: Raw pos xyz : {}".format( np.array( [data.translation.x, data.translation.y, data.translation.z])))
-                    print("DEBUG: NED pos xyz : {}".format( np.array( tf.translation_from_matrix( H_aeroRef_aeroBody))))
+                    progress("DEBUG: Raw RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_T265Ref_T265body, 'sxyz')) * 180 / m.pi))
+                    progress("DEBUG: NED RPY[deg]: {}".format( np.array( tf.euler_from_matrix( H_aeroRef_aeroBody, 'sxyz')) * 180 / m.pi))
+                    progress("DEBUG: Raw pos xyz : {}".format( np.array( [data.translation.x, data.translation.y, data.translation.z])))
+                    progress("DEBUG: NED pos xyz : {}".format( np.array( tf.translation_from_matrix( H_aeroRef_aeroBody))))
 
 except KeyboardInterrupt:
     send_msg_to_gcs('Closing the script...')  
 
 except:
     send_msg_to_gcs('ERROR IN SCRIPT')  
-    print("Unexpected error:", sys.exc_info()[0])
+    progress("Unexpected error: %s" % sys.exc_info()[0])
 
 finally:
     pipe.stop()
     vehicle.close()
-    print("INFO: Realsense pipeline and vehicle object closed.")
+    progress("INFO: Realsense pipeline and vehicle object closed.")
     sys.exit()
