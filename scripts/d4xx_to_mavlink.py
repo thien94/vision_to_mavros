@@ -222,10 +222,10 @@ for i in range(len(filters)):
 
 if not debug_enable:
     debug_enable = debug_enable_default
-    cv2.namedWindow(display_name, cv2.WINDOW_AUTOSIZE)
 
 if debug_enable == 1:
     progress("INFO: Debugging option enabled")
+    cv2.namedWindow(display_name, cv2.WINDOW_AUTOSIZE)
 else:
     progress("INFO: Debugging option DISABLED")
 
