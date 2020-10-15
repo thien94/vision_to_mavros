@@ -719,13 +719,13 @@ try:
             # Prepare the data
             input_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
             output_image = np.asanyarray(colorizer.colorize(filtered_frame).get_data())
-            display_image = np.hstack((input_image, cv2.resize(output_image, (DEPTH_WIDTH, DEPTH_HEIGHT))))
 
             # Draw a horizontal line to visualize the obstacles' line
-            x1, y1 = int(DEPTH_WIDTH + obstacle_line_thickness_pixel / 2), int(obstacle_line_height)
-            x2, y2 = int(DEPTH_WIDTH * 2), int(obstacle_line_height)
+            x1, y1 = int(0), int(obstacle_line_height)
+            x2, y2 = int(DEPTH_WIDTH), int(obstacle_line_height)
             line_thickness = obstacle_line_thickness_pixel
-            cv2.line(display_image, (x1, y1), (x2, y2), (0, 255, 0), thickness=line_thickness)
+            cv2.line(output_image, (x1, y1), (x2, y2), (0, 255, 0), thickness=line_thickness)
+            display_image = np.hstack((input_image, cv2.resize(output_image, (DEPTH_WIDTH, DEPTH_HEIGHT))))
 
             # Put the fps in the corner of the image
             processing_speed = 1 / (time.time() - last_time)
