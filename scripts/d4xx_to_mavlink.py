@@ -222,6 +222,7 @@ for i in range(len(filters)):
 
 if not debug_enable:
     debug_enable = debug_enable_default
+    cv2.namedWindow(display_name, cv2.WINDOW_AUTOSIZE)
 
 if debug_enable == 1:
     progress("INFO: Debugging option enabled")
@@ -596,6 +597,7 @@ def get_local_ip():
 ######################################################
 
 try:
+    # Note: 'version' attribute is supported from pyrealsense2 2.31 onwards and might require building from source
     progress("INFO: pyrealsense2 version: %s" % str(rs.__version__))
 except Exception:
     # fail silently
@@ -731,7 +733,6 @@ try:
             processing_speed = 1 / (time.time() - last_time)
             text = ("%0.2f" % (processing_speed,)) + ' fps'
             textsize = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
-            cv2.namedWindow(display_name, cv2.WINDOW_AUTOSIZE)
             cv2.putText(display_image, 
                         text,
                         org = (int((display_image.shape[1] - textsize[0]/2)), int((textsize[1])/2)),
