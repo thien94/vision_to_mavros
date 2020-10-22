@@ -478,6 +478,12 @@ def user_input_monitor():
 # Main code starts here
 #######################################
 
+try:
+    progress("INFO: pyrealsense2 version: %s" % str(rs.__version__))
+except Exception:
+    # fail silently
+    pass
+
 progress("INFO: Starting Vehicle communications")
 conn = mavutil.mavlink_connection(
     connection_string,
