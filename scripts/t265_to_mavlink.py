@@ -27,6 +27,7 @@ import math as m
 import time
 import argparse
 import threading
+import signal
 from time import sleep
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -533,14 +534,31 @@ if enable_user_keyboard_input:
 
 sched.start()
 
+# gracefully terminate the script if an interrupt signal (e.g. ctrl-c)
+# is received.  This is considered to be abnormal termination.
+main_loop_should_quit = False
+def sigint_handler(sig, frame):
+    global main_loop_should_quit
+    main_loop_should_quit = True
+signal.signal(signal.SIGINT, sigint_handler)
+
+# gracefully terminate the script if a terminate signal is received
+# (e.g. kill -TERM).  
+def sigterm_handler(sig, frame):
+    global main_loop_should_quit
+    main_loop_should_quit = True
+    global exit_code
+    exit_code = 0
+
+signal.signal(signal.SIGTERM, sigterm_handler)
+
 if compass_enabled == 1:
     time.sleep(1) # Wait a short while for yaw to be correctly initiated
 
 send_msg_to_gcs('Sending vision messages to FCU')
 
 try:
-    while True:
-
+    while not main_loop_should_quit:
         # Wait for the next set of frames from the camera
         frames = pipe.wait_for_frames()
 
@@ -616,14 +634,17 @@ try:
                     progress("DEBUG: Raw pos xyz : {}".format( np.array( [data.translation.x, data.translation.y, data.translation.z])))
                     progress("DEBUG: NED pos xyz : {}".format( np.array( tf.translation_from_matrix( H_aeroRef_aeroBody))))
 
-except KeyboardInterrupt:
-    send_msg_to_gcs('Closing the script...')  
+except Exception as e:
+    progress(e)
 
 except:
     send_msg_to_gcs('ERROR IN SCRIPT')  
     progress("Unexpected error: %s" % sys.exc_info()[0])
 
 finally:
+    progress('Closing the script...')
+    # start a timer in case stopping everything nicely doesn't work.
+    signal.setitimer(signal.ITIMER_REAL, 5)  # seconds...
     pipe.stop()
     mavlink_thread_should_exit = True
     mavlink_thread.join()
