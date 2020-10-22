@@ -237,7 +237,7 @@ else:
 
 
 #######################################
-# Functions
+# Functions - MAVLink
 #######################################
 
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
@@ -427,6 +427,10 @@ def vehicle_connect():
         is_vehicle_connected = True
         return True
 
+#######################################
+# Functions - T265
+#######################################
+
 def increment_reset_counter():
     global reset_counter
     if reset_counter >= 255:
@@ -460,6 +464,10 @@ def realsense_connect():
 
     # Start streaming with requested config
     pipe.start(cfg)
+
+#######################################
+# Functions - Miscellaneous
+#######################################
 
 # Monitor user input from the terminal and perform action accordingly
 def user_input_monitor():
