@@ -5,10 +5,11 @@
 #####################################################
 # This script assumes pyrealsense2.[].so file is found under the same directory as this script
 # Install required packages: 
-#   pip install pyrealsense2
-#   pip install transformations
-#   pip3 install dronekit
+#   pip3 install pyrealsense2
+#   pip3 install transformations
+#   pip3 install pymavlink
 #   pip3 install apscheduler
+#   pip3 install pyserial
 
 # Set the path for IDLE
 import sys
@@ -60,7 +61,7 @@ enable_msg_vision_position_estimate = True
 vision_position_estimate_msg_hz_default = 30.0
 
 # https://mavlink.io/en/messages/ardupilotmega.html#VISION_POSITION_DELTA
-enable_msg_vision_position_delta = False
+enable_msg_vision_position_delta = True
 vision_position_delta_msg_hz_default = 30.0
 
 # https://mavlink.io/en/messages/common.html#VISION_SPEED_ESTIMATE
@@ -98,14 +99,13 @@ pose_data_confidence_level = ('FAILED', 'Low', 'Medium', 'High')
 
 # lock for thread synchronization
 lock = threading.Lock()
+mavlink_thread_should_exit = False
 
 #######################################
 # Global variables
 #######################################
 
 # FCU connection variables
-vehicle = None
-is_vehicle_connected = False
 
 # Camera-related variables
 pipe = None
@@ -240,11 +240,28 @@ else:
 # Functions - MAVLink
 #######################################
 
+def mavlink_loop(conn, callbacks):
+    '''a main routine for a thread; reads data from a mavlink connection,
+    calling callbacks based on message type received.
+    '''
+    interesting_messages = list(callbacks.keys())
+    while not mavlink_thread_should_exit:
+        # send a heartbeat msg
+        conn.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+                                mavutil.mavlink.MAV_AUTOPILOT_GENERIC,
+                                0,
+                                0,
+                                0)
+        m = conn.recv_match(type=interesting_messages, timeout=1, blocking=True)
+        if m is None:
+            continue
+        callbacks[m.get_type()](m)
+
 # https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE
 def send_vision_position_estimate_message():
-    global is_vehicle_connected, current_time_us, H_aeroRef_aeroBody, reset_counter
+    global current_time_us, H_aeroRef_aeroBody, reset_counter
     with lock:
-        if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
+        if H_aeroRef_aeroBody is not None:
             # Setup angle data
             rpy_rad = np.array( tf.euler_from_matrix(H_aeroRef_aeroBody, 'sxyz'))
 
@@ -259,8 +276,8 @@ def send_vision_position_estimate_message():
                                                cov_twist, 0,
                                                   cov_twist])
 
-            # Setup the message to be sent
-            msg = vehicle.message_factory.vision_position_estimate_encode(
+            # Send the message
+            conn.mav.vision_position_estimate_send(
                 current_time_us,            # us Timestamp (UNIX time or time since system boot)
                 H_aeroRef_aeroBody[0][3],   # Global X position
                 H_aeroRef_aeroBody[1][3],   # Global Y position
@@ -271,14 +288,12 @@ def send_vision_position_estimate_message():
                 covariance,                 # Row-major representation of pose 6x6 cross-covariance matrix
                 reset_counter               # Estimate reset counter. Increment every time pose estimate jumps.
             )
-            vehicle.send_mavlink(msg)
-            vehicle.flush()
 
 # https://mavlink.io/en/messages/ardupilotmega.html#VISION_POSITION_DELTA
 def send_vision_position_delta_message():
-    global is_vehicle_connected, current_time_us, current_confidence_level, H_aeroRef_aeroBody
+    global current_time_us, current_confidence_level, H_aeroRef_aeroBody
     with lock:
-        if is_vehicle_connected == True and H_aeroRef_aeroBody is not None:
+        if H_aeroRef_aeroBody is not None:
             # Calculate the deltas in position, attitude and time from the previous to current orientation
             H_aeroRef_PrevAeroBody      = send_vision_position_delta_message.H_aeroRef_PrevAeroBody
             H_PrevAeroBody_CurrAeroBody = (np.linalg.inv(H_aeroRef_PrevAeroBody)).dot(H_aeroRef_aeroBody)
@@ -288,15 +303,13 @@ def send_vision_position_delta_message():
             delta_angle_rad  = np.array( tf.euler_from_matrix(H_PrevAeroBody_CurrAeroBody, 'sxyz'))
 
             # Send the message
-            msg = vehicle.message_factory.vision_position_delta_encode(
+            conn.mav.vision_position_delta_send(
                 current_time_us,    # us: Timestamp (UNIX time or time since system boot)
                 delta_time_us,	    # us: Time since last reported camera frame
                 delta_angle_rad,    # float[3] in radian: Defines a rotation vector in body frame that rotates the vehicle from the previous to the current orientation
                 delta_position_m,   # float[3] in m: Change in position from previous to current frame rotated into body frame (0=forward, 1=right, 2=down)
                 current_confidence_level # Normalized confidence value from 0 to 100. 
             )
-            vehicle.send_mavlink(msg)
-            vehicle.flush()
 
             # Save static variables
             send_vision_position_delta_message.H_aeroRef_PrevAeroBody = H_aeroRef_aeroBody
@@ -304,9 +317,9 @@ def send_vision_position_delta_message():
 
 # https://mavlink.io/en/messages/common.html#VISION_SPEED_ESTIMATE
 def send_vision_speed_estimate_message():
-    global is_vehicle_connected, current_time_us, V_aeroRef_aeroBody, reset_counter
+    global current_time_us, V_aeroRef_aeroBody, reset_counter
     with lock:
-        if is_vehicle_connected == True and V_aeroRef_aeroBody is not None:
+        if V_aeroRef_aeroBody is not None:
 
             # Attemp #01: following this formula https://github.com/IntelRealSense/realsense-ros/blob/development/realsense2_camera/src/base_realsense_node.cpp#L1406-L1411
             cov_pose    = linear_accel_cov * pow(10, 3 - int(data.tracker_confidence))
@@ -314,8 +327,8 @@ def send_vision_speed_estimate_message():
                                     0,          cov_pose,   0,
                                     0,          0,          cov_pose])
             
-            # Setup the message to be sent
-            msg = vehicle.message_factory.vision_speed_estimate_encode(
+            # Send the message
+            conn.mav.vision_speed_estimate_send(
                 current_time_us,            # us Timestamp (UNIX time or time since system boot)
                 V_aeroRef_aeroBody[0][3],   # Global X speed
                 V_aeroRef_aeroBody[1][3],   # Global Y speed
@@ -323,8 +336,6 @@ def send_vision_speed_estimate_message():
                 covariance,                 # covariance
                 reset_counter               # Estimate reset counter. Increment every time pose estimate jumps.
             )
-            vehicle.send_mavlink(msg)
-            vehicle.flush()
 
 # Update the changes of confidence level on GCS and terminal
 def update_tracking_confidence_to_gcs():
@@ -336,96 +347,62 @@ def update_tracking_confidence_to_gcs():
 # https://mavlink.io/en/messages/common.html#STATUSTEXT
 def send_msg_to_gcs(text_to_be_sent):
     # MAV_SEVERITY: 0=EMERGENCY 1=ALERT 2=CRITICAL 3=ERROR, 4=WARNING, 5=NOTICE, 6=INFO, 7=DEBUG, 8=ENUM_END
-    # Defined here: https://mavlink.io/en/messages/common.html#MAV_SEVERITY
-    # MAV_SEVERITY = 3 will let the message be displayed on Mission Planner HUD, but 6 is ok for QGroundControl
-    if is_vehicle_connected == True:
-        text_msg = 'T265: ' + text_to_be_sent
-        status_msg = vehicle.message_factory.statustext_encode(
-            6,                      # MAV_SEVERITY
-            text_msg.encode()	    # max size is char[50]       
-        )
-        vehicle.send_mavlink(status_msg)
-        vehicle.flush()
-        progress("INFO: " + text_to_be_sent)
-    else:
-        progress("INFO: Vehicle not connected. Cannot send text message to Ground Control Station (GCS)")
+    text_msg = 'T265: ' + text_to_be_sent
+    conn.mav.statustext_send(mavutil.mavlink.MAV_SEVERITY_INFO, text_msg.encode())
+    progress("INFO: %s" % text_to_be_sent)
+
 
 # Send a mavlink SET_GPS_GLOBAL_ORIGIN message (http://mavlink.org/messages/common#SET_GPS_GLOBAL_ORIGIN), which allows us to use local position information without a GPS.
 def set_default_global_origin():
-    if is_vehicle_connected == True:
-        msg = vehicle.message_factory.set_gps_global_origin_encode(
-            int(vehicle._master.source_system),
-            home_lat, 
-            home_lon,
-            home_alt
-        )
-
-        vehicle.send_mavlink(msg)
-        vehicle.flush()
+    conn.mav.set_gps_global_origin_send(
+        1,
+        home_lat, 
+        home_lon,
+        home_alt
+    )
 
 # Send a mavlink SET_HOME_POSITION message (http://mavlink.org/messages/common#SET_HOME_POSITION), which allows us to use local position information without a GPS.
 def set_default_home_position():
-    if is_vehicle_connected == True:
-        x = 0
-        y = 0
-        z = 0
-        q = [1, 0, 0, 0]   # w x y z
+    x = 0
+    y = 0
+    z = 0
+    q = [1, 0, 0, 0]   # w x y z
 
-        approach_x = 0
-        approach_y = 0
-        approach_z = 1
+    approach_x = 0
+    approach_y = 0
+    approach_z = 1
 
-        msg = vehicle.message_factory.set_home_position_encode(
-            int(vehicle._master.source_system),
-            home_lat, 
-            home_lon,
-            home_alt,
-            x,
-            y,
-            z,
-            q,
-            approach_x,
-            approach_y,
-            approach_z
-        )
+    conn.mav.set_home_position_send(
+        1,
+        home_lat, 
+        home_lon,
+        home_alt,
+        x,
+        y,
+        z,
+        q,
+        approach_x,
+        approach_y,
+        approach_z
+    )
 
-        vehicle.send_mavlink(msg)
-        vehicle.flush()
 
 # Request a timesync update from the flight controller, for future work.
 # TODO: Inspect the usage of timesync_update 
 def update_timesync(ts=0, tc=0):
     if ts == 0:
         ts = int(round(time.time() * 1000))
-    msg = vehicle.message_factory.timesync_encode(
+    conn.mav.timesync_send(
         tc,     # tc1
         ts      # ts1
     )
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
 
 # Listen to attitude data to acquire heading when compass data is enabled
-def att_msg_callback(self, attr_name, value):
+def att_msg_callback(value):
     global heading_north_yaw
     if heading_north_yaw is None:
         heading_north_yaw = value.yaw
-        progress("INFO: Received first ATTITUDE message with heading yaw" + str(heading_north_yaw * 180 / m.pi) +  "degrees")
-
-def vehicle_connect():
-    global vehicle, is_vehicle_connected
-    
-    try:
-        vehicle = connect(connection_string, wait_ready = True, baud = connection_baudrate, source_system = 1)
-    except:
-        progress('Connection error! Retrying...')
-        sleep(1)
-
-    if vehicle == None:
-        is_vehicle_connected = False
-        return False
-    else:
-        is_vehicle_connected = True
-        return True
+        progress("INFO: Received first ATTITUDE message with heading yaw %.2f degrees" % m.degrees(heading_north_yaw))
 
 #######################################
 # Functions - T265
@@ -501,18 +478,27 @@ def user_input_monitor():
 # Main code starts here
 #######################################
 
-progress("INFO: Connecting to vehicle.")
-while (not vehicle_connect()):
-    pass
-progress("INFO: Vehicle connected.")
+progress("INFO: Starting Vehicle communications")
+conn = mavutil.mavlink_connection(
+    connection_string,
+    autoreconnect = True,
+    source_system = 1,
+    source_component = 93,
+    baud=connection_baudrate,
+    force_connected=True,
+)
+
+mavlink_callbacks = {
+    'ATTITUDE': att_msg_callback,
+}
+
+mavlink_thread = threading.Thread(target=mavlink_loop, args=(conn, mavlink_callbacks))
+mavlink_thread.start()
 
 send_msg_to_gcs('Connecting to camera...')
 realsense_connect()
 send_msg_to_gcs('Camera connected.')
 
-if compass_enabled == 1:
-    # Listen to the attitude data in aeronautical frame
-    vehicle.add_message_listener('ATTITUDE', att_msg_callback)
 
 # Send MAVlink messages in the background at pre-determined frequencies
 sched = BackgroundScheduler()
@@ -548,14 +534,7 @@ send_msg_to_gcs('Sending vision messages to FCU')
 
 try:
     while True:
-        # Monitor last_heartbeat to reconnect in case of lost connection
-        if vehicle.last_heartbeat > connection_timeout_sec_default:
-            is_vehicle_connected = False
-            progress("WARNING: CONNECTION LOST. Last hearbeat was %f sec ago."% vehicle.last_heartbeat)
-            progress("WARNING: Attempting to reconnect ...")
-            vehicle_connect()
-            continue
-        
+
         # Wait for the next set of frames from the camera
         frames = pipe.wait_for_frames()
 
@@ -640,6 +619,8 @@ except:
 
 finally:
     pipe.stop()
-    vehicle.close()
+    mavlink_thread_should_exit = True
+    mavlink_thread.join()
+    conn.close()
     progress("INFO: Realsense pipeline and vehicle object closed.")
     sys.exit()
