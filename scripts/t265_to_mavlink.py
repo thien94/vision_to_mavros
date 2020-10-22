@@ -62,7 +62,7 @@ enable_msg_vision_position_estimate = True
 vision_position_estimate_msg_hz_default = 30.0
 
 # https://mavlink.io/en/messages/ardupilotmega.html#VISION_POSITION_DELTA
-enable_msg_vision_position_delta = True
+enable_msg_vision_position_delta = False
 vision_position_delta_msg_hz_default = 30.0
 
 # https://mavlink.io/en/messages/common.html#VISION_SPEED_ESTIMATE
@@ -101,6 +101,11 @@ pose_data_confidence_level = ('FAILED', 'Low', 'Medium', 'High')
 # lock for thread synchronization
 lock = threading.Lock()
 mavlink_thread_should_exit = False
+
+# default exit code is failure - a graceful termination with a
+# terminate signal is possible.
+exit_code = 1
+
 
 #######################################
 # Global variables
@@ -659,4 +664,4 @@ finally:
     mavlink_thread.join()
     conn.close()
     progress("INFO: Realsense pipeline and vehicle object closed.")
-    sys.exit()
+    sys.exit(exit_code)
