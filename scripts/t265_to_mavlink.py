@@ -28,9 +28,9 @@ import time
 import argparse
 import threading
 import signal
+
 from time import sleep
 from apscheduler.schedulers.background import BackgroundScheduler
-
 from dronekit import connect, VehicleMode
 from pymavlink import mavutil
 
@@ -502,10 +502,19 @@ mavlink_callbacks = {
 mavlink_thread = threading.Thread(target=mavlink_loop, args=(conn, mavlink_callbacks))
 mavlink_thread.start()
 
+# connecting and configuring the camera is a little hit-and-miss.
+# Start a timer and rely on a restart of the script to get it working.
+# Configuring the camera appears to block all threads, so we can't do
+# this internally.
+
+# send_msg_to_gcs('Setting timer...')
+signal.setitimer(signal.ITIMER_REAL, 5)  # seconds...
+
 send_msg_to_gcs('Connecting to camera...')
 realsense_connect()
 send_msg_to_gcs('Camera connected.')
 
+signal.setitimer(signal.ITIMER_REAL, 0)  # cancel alarm
 
 # Send MAVlink messages in the background at pre-determined frequencies
 sched = BackgroundScheduler()
