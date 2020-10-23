@@ -141,9 +141,6 @@ exit_code = 1
 ##  Global variables                                ##
 ######################################################
 
-# FCU connection variables
-vehicle_pitch_rad = None
-
 # Camera-related variables
 pipe = None
 depth_scale = 0
@@ -156,6 +153,7 @@ display_name  = 'Input/output depth'
 rtsp_streaming_img = None
 
 # Data variables
+vehicle_pitch_rad = None
 data = None
 current_time_us = 0
 last_obstacle_distance_sent_ms = 0  # value of current_time_us when obstacle_distance last sent
