@@ -1,0 +1,13 @@
+<launch>
+    <!-- Launch 3 nodes as below
+    At development stage, each node should be launched in a separated terminal to view the output -->
+
+    <!-- This node will launch the ROS driver for Realsense T265 -->
+    <include file="$(find vicon_bridge)/launch/vicon.launch"/>
+
+    <!-- This node will launch MAVROS -->
+    <include file="$(find mavros)/launch/apm.launch"/>
+
+    <!-- This node will launch the node that bridges realsense-ros and MAVROS -->
+    <include file="$(find vision_to_mavros)/launch/vicon_tf_to_mavros.launch"/>
+</launch>

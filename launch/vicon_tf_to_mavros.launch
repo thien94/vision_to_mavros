@@ -4,7 +4,7 @@
     <arg name="target_frame_id"   default="/world" />
     <param name="target_frame_id"   value="$(arg target_frame_id)" />
 
-    <arg name="source_frame_id"   default="/t265_pose_frame" />
+    <arg name="source_frame_id"   default="/vicon/nuc2/nuc2" />
     <param name="source_frame_id"   value="$(arg source_frame_id)" />
 
     <param name="output_rate"       value="30" />

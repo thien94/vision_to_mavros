@@ -1,8 +1,9 @@
 <launch>
-    <arg name="serial_t265"         default=""/>    <!-- Note: Replace with actual serial number -->
-    <arg name="serial_d4xx"    		default=""/>    <!-- Note: Replace with actual serial number -->
+    <arg name="serial_t265"         default="905312110311"/>    <!-- Note: Replace with actual serial number -->
+    <arg name="serial_d4xx"    		default="918512073880"/>    <!-- Note: Replace with actual serial number -->
     <arg name="camera1"             default="t265"/>		    <!-- Note: Replace with camera name -->
-    <arg name="camera2"             default="d435"/>		    <!-- Note: Replace with camera name -->
+    <arg name="camera2"             default="d435i"/>		    <!-- Note: Replace with camera name -->
+    <arg name="device_type_t265"    default="t265"/>
     <arg name="tf_prefix_camera1"   default="$(arg camera1)"/>
     <arg name="tf_prefix_camera2"   default="$(arg camera2)"/>
     <arg name="initial_reset"       default="false"/>
@@ -18,10 +19,10 @@
     <arg name="enable_accel"        default="true"/>
     <arg name="enable_fisheye1"     default="true"/>
     <arg name="enable_fisheye2"     default="true"/>
+    <arg name="enable_pose"         default="true"/>
     <arg name="linear_accel_cov"    default="0.01"/>
     <arg name="unite_imu_method"    default="linear_interpolation"/>
-    <arg name="topic_odom_in"       default="odom_in"/>
-    <arg name="calib_odom_file"     default=""/>
+    <arg name="publish_odom_tf"     default="true"/>
     <!-- end t265 -->
 
     <!-- d4xx -->
@@ -36,8 +37,8 @@
     <arg name="infra_fps"           default="30"/>
     <arg name="enable_depth"        value="true"/>
     <arg name="enable_color"        value="true"/>
-    <arg name="enable_infra1"       value="false"/>
-    <arg name="enable_infra2"       value="false"/>
+    <arg name="enable_infra1"       value="true"/>
+    <arg name="enable_infra2"       value="true"/>
     <arg name="enable_pointcloud"   value="true"/>
     <arg name="filters"             value="pointcloud"/>
     <!-- end d4xx -->
@@ -47,23 +48,27 @@
         <include file="$(find realsense2_camera)/launch/includes/nodelet.launch.xml">
             <arg name="serial_no"           value="$(arg serial_t265)"/>
             <arg name="tf_prefix"           value="$(arg tf_prefix_camera1)"/>
+            <arg name="device_type"         value="$(arg device_type_t265)"/>
 
             <arg name="enable_sync"         value="$(arg enable_sync)"/>
+
             <arg name="fisheye_width"       value="$(arg fisheye_width)"/>
             <arg name="fisheye_height"      value="$(arg fisheye_height)"/>
             <arg name="enable_fisheye1"     value="$(arg enable_fisheye1)"/>
             <arg name="enable_fisheye2"     value="$(arg enable_fisheye2)"/>
+
             <arg name="fisheye_fps"         value="$(arg fisheye_fps)"/>
             <arg name="gyro_fps"            value="$(arg gyro_fps)"/>
             <arg name="accel_fps"           value="$(arg accel_fps)"/>
             <arg name="enable_gyro"         value="$(arg enable_gyro)"/>
             <arg name="enable_accel"        value="$(arg enable_accel)"/>
+            <arg name="enable_pose"         value="$(arg enable_pose)"/>
+
             <arg name="linear_accel_cov"    value="$(arg linear_accel_cov)"/>
             <arg name="initial_reset"       value="$(arg initial_reset)"/>
             <arg name="unite_imu_method"    value="$(arg unite_imu_method)"/>
 
-            <arg name="topic_odom_in"       value="$(arg topic_odom_in)"/>
-            <arg name="calib_odom_file"     value="$(arg calib_odom_file)"/>
+            <arg name="publish_odom_tf"     value="$(arg publish_odom_tf)"/>
         </include>
     </group>
 
@@ -72,23 +77,38 @@
         <include file="$(find realsense2_camera)/launch/includes/nodelet.launch.xml">
             <arg name="serial_no"           value="$(arg serial_d4xx)"/>
             <arg name="tf_prefix"		    value="$(arg tf_prefix_camera2)"/>
+
             <arg name="initial_reset"       value="$(arg initial_reset)"/>
             <arg name="align_depth"         value="true"/>
 
             <arg name="color_width"         value="$(arg color_width)"/>
             <arg name="color_height"        value="$(arg color_height)"/>
             <arg name="color_fps"           value="$(arg color_fps)"/>
+
             <arg name="depth_width"         value="$(arg depth_width)"/>
             <arg name="depth_height"        value="$(arg depth_height)"/>
             <arg name="depth_fps"           value="$(arg depth_fps)"/>
+
             <arg name="infra_width"         value="$(arg infra_width)"/>
             <arg name="infra_height"        value="$(arg infra_height)"/>
             <arg name="infra_fps"           value="$(arg infra_fps)"/>
+
+            <arg name="gyro_fps"            value="400"/>
+            <arg name="accel_fps"           value="250"/>
+            <arg name="linear_accel_cov"    value="$(arg linear_accel_cov)"/>
+            <arg name="unite_imu_method"    value="$(arg unite_imu_method)"/>
+
             <arg name="enable_depth"        value="$(arg enable_depth)"/>
             <arg name="enable_color"        value="$(arg enable_color)"/>
             <arg name="enable_infra1"       value="$(arg enable_infra1)"/>
             <arg name="enable_infra2"       value="$(arg enable_infra2)"/>
             <arg name="enable_pointcloud"   value="$(arg enable_pointcloud)"/>
+            <arg name="enable_gyro"         value="$(arg enable_gyro)"/>
+            <arg name="enable_accel"        value="$(arg enable_accel)"/>
+            <arg name="enable_pose"         value="$(arg enable_pose)"/>
+
+            <arg name="publish_odom_tf"     value="$(arg publish_odom_tf)"/>
+
             <arg name="filters"             value="$(arg filters)"/>
             <arg name="enable_sync"         value="$(arg enable_sync)"/>
         </include>
