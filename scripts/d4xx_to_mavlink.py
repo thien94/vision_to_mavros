@@ -121,6 +121,9 @@ connection_baudrate_default = 921600
 # Use this to rotate all processed data
 camera_facing_angle_degree = 0
 
+# Store device serial numbers of connected camera
+device_id = None
+
 # Enable/disable each message/function individually
 enable_msg_obstacle_distance = True
 enable_msg_distance_sensor = False
@@ -180,6 +183,8 @@ parser.add_argument('--obstacle_distance_msg_hz', type=float,
                     help="Update frequency for OBSTACLE_DISTANCE message. If not specified, a default value will be used.")
 parser.add_argument('--debug_enable',type=float,
                     help="Enable debugging information")
+parser.add_argument('--camera_name', type=str,
+                    help="Camera name to be connected to. If not specified, any valid camera will be connected to randomly. For eg: type 'D435I' to look for Intel RealSense D435I.")
 
 args = parser.parse_args()
 
@@ -187,6 +192,7 @@ connection_string = args.connect
 connection_baudrate = args.baudrate
 obstacle_distance_msg_hz = args.obstacle_distance_msg_hz
 debug_enable = args.debug_enable
+camera_name = args.camera_name
 
 def progress(string):
     print(string, file=sys.stdout)
@@ -337,14 +343,18 @@ def ahrs2_msg_callback(value):
 DS5_product_ids = ["0AD1", "0AD2", "0AD3", "0AD4", "0AD5", "0AF6", "0AFE", "0AFF", "0B00", "0B01", "0B03", "0B07","0B3A"]
 
 def find_device_that_supports_advanced_mode() :
+    global device_id
     ctx = rs.context()
     ds5_dev = rs.device()
-    devices = ctx.query_devices();
+    devices = ctx.query_devices()
     for dev in devices:
         if dev.supports(rs.camera_info.product_id) and str(dev.get_info(rs.camera_info.product_id)) in DS5_product_ids:
-            if dev.supports(rs.camera_info.name):
-                progress("INFO: Found device that supports advanced mode: %s" % dev.get_info(rs.camera_info.name))
-            return dev
+            name = rs.camera_info.name
+            if dev.supports(name):
+                if not camera_name or (camera_name.lower() == dev.get_info(name).split()[2].lower()):
+                    progress("INFO: Found device that supports advanced mode: %s" % dev.get_info(name))
+                    device_id = dev.get_info(rs.camera_info.serial_number)
+                    return dev
     raise Exception("No device that supports advanced mode was found")
 
 # Loop until we successfully enable advanced mode
@@ -389,6 +399,9 @@ def realsense_connect():
 
     # Configure image stream(s)
     config = rs.config()
+    if device_id: 
+        # connect to a specific device ID
+        config.enable_device(device_id)
     config.enable_stream(STREAM_TYPE[0], DEPTH_WIDTH, DEPTH_HEIGHT, FORMAT[0], FPS)
     if RTSP_STREAMING_ENABLE is True:
         config.enable_stream(STREAM_TYPE[1], COLOR_WIDTH, COLOR_HEIGHT, FORMAT[1], FPS)
