@@ -31,7 +31,6 @@ import signal
 
 from time import sleep
 from apscheduler.schedulers.background import BackgroundScheduler
-from dronekit import connect, VehicleMode
 from pymavlink import mavutil
 
 
